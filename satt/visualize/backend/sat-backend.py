@@ -23,7 +23,6 @@ from flask import Flask, request, jsonify, send_file, abort
 from werkzeug import secure_filename
 import glob
 from flask import g
-from werkzeug.local import LocalProxy
 if not sys.platform.startswith('win'):
     from redis import Redis
     from rq import Queue
@@ -59,22 +58,14 @@ DEBUG = False
 
 INS_MORE_LIMIT = 1000
 
-# Global DB Definitions per request
-db = None
-cur = None
-named_cur = None
-
-
 def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
+    if getattr(g, '_database', None) is None:
         g._database = psycopg2.connect(
             dbname=status.getDbConfig('dbname'),
             user=status.getDbConfig('user'),
             password=status.getDbConfig('password'))
         g._database.autocommit = True
-        db = g._database
-    return db
+    return g._database
 
 
 @app.teardown_appcontext
@@ -93,16 +84,15 @@ if not sys.platform.startswith('win'):
     queue = Queue(connection=Redis())
 
 
-@app.before_request
-def before_request():
-    global db, cur, named_cur
-    db = LocalProxy(get_db)
-    cur = db.cursor()
-    named_cur = db.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
+def begin_db_request():
+    db = get_db()
+    return (db.cursor(),
+            db.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor))
 
 
 @app.route('/api/1/screenshot/<int:trace_id>/screen.png', methods=['GET'])
 def screenshot(trace_id):
+    cur, named_cur = begin_db_request()
     # backend tmp directory path
     tmp_path = os.path.join(SAT_HOME, 'satt', 'visualize', 'backend', 'tmp')
     trace_screenshot = tmp_path + str(trace_id) + ".png"
@@ -229,6 +219,7 @@ def trace(path, endpoint):
 
 # Helper to get tsc tick
 def get_tsc_tick(schema):
+    cur, named_cur = begin_db_request()
     cur.execute("select exists(select * from information_schema.tables where table_name=%s and table_schema=%s)", ('info', schema,))
     res = cur.fetchone()
     if res[0]:
@@ -242,12 +233,14 @@ def get_tsc_tick(schema):
 
 
 def create_bookmark():
+    cur, named_cur = begin_db_request()
     cur.execute("""create table if not exists public.bookmark
     (id serial, traceId int, title varchar(1024), description text, data text, PRIMARY KEY(id))""")
 
 
 @app.route('/api/1/bookmark', methods=['GET'])
 def getBookmarks():
+    cur, named_cur = begin_db_request()
     try:
         named_cur.execute("select * from public.bookmark")
     except:
@@ -260,6 +253,7 @@ def getBookmarks():
 
 @app.route('/api/1/bookmark/<int:bookmarkId>', methods=['GET'])
 def getBookmarksById(bookmarkId):
+    cur, named_cur = begin_db_request()
     named_cur.execute("select * from public.bookmark where id = %s", (bookmarkId,))
     data = named_cur.fetchone()
     if data:
@@ -270,6 +264,7 @@ def getBookmarksById(bookmarkId):
 
 @app.route('/api/1/bookmark', methods=['POST', 'PATCH'])
 def saveBookmark():
+    cur, named_cur = begin_db_request()
     if request.method == 'POST':
         data = request.get_json()
         try:
@@ -287,12 +282,14 @@ def saveBookmark():
 
 @app.route('/api/1/bookmark/<int:bookmarkId>', methods=['DELETE'])
 def deleteBookmark(bookmarkId):
+    cur, named_cur = begin_db_request()
     named_cur.execute("delete from public.bookmark where id = %s", (bookmarkId,))
     return json.dumps({"ok": "ok"})
 
 
 @app.route('/api/1/bookmark', methods=['PUT'])
 def updateBookmark():
+    cur, named_cur = begin_db_request()
     data = request.get_json()
     cur.execute("UPDATE public.bookmark SET title=%s, description=%s WHERE id=%s", (data['title'], data['description'], data['id'],))
     return json.dumps({"ok": "ok"})
@@ -300,6 +297,7 @@ def updateBookmark():
 
 @app.route('/api/1/traceinfo/<int:traceId>')
 def traceinfo(traceId):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     rows = []
     data = {}
@@ -343,6 +341,7 @@ def merge_insflow_overflow_sections(old_rows,new_rows):
 
 @app.route('/api/1/insflownode/<int:traceId>/<string:pid>/<int:start>/<int:end>/<int:level>', methods=['GET', 'POST'])
 def graph_insflownode(traceId, pid, start, end, level):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     # Searching next level from 'start' ts onwards. We can include 'start' ts
     #  into search because we anyway search one step deeper in stack, so we
@@ -401,6 +400,7 @@ def graph_insflownode(traceId, pid, start, end, level):
 # thread 0/0
 @app.route('/api/1/insflow/<int:traceId>/<string:pid>/<int:start>/<int:end>', methods=['GET', 'POST'])
 def graph_insflow(traceId, pid, start, end):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
 
     cur.execute("""select Min(level) from """+schema+""".ins where thread_id = %s and ts >= %s and ts <= %s """,(pid,start,end,))
@@ -499,6 +499,7 @@ def graph_insflow(traceId, pid, start, end):
 ################################################################
 @app.route('/api/1/statistics/groups/thread/<int:traceId>/<int:start>/<int:end>', methods=['GET', 'POST'])
 def statistics_groups_thread(traceId, start, end):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""select round((ins::real * 100 / ( select sum(sum) from """ +schema +""".graph where gen_ts >= %s and gen_ts <= %s ))::numeric , 4)::real as percent, * from (
@@ -525,6 +526,7 @@ def statistics_groups_thread(traceId, start, end):
 ################################################################
 @app.route('/api/1/statistics/groups/process/<int:traceId>/<int:start>/<int:end>', methods=['GET', 'POST'])
 def statistics_groups_process(traceId, start, end):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""select round((ins::real * 100 / ( select sum(sum) from """ +schema +""".graph where gen_ts >= %s and gen_ts <= %s ))::numeric , 4)::real as percent, * from (
@@ -552,6 +554,7 @@ def statistics_groups_process(traceId, start, end):
 ################################################################
 @app.route('/api/1/statistics/groups/module/<int:traceId>/<int:start>/<int:end>', methods=['GET', 'POST'])
 def statistics_groups_module(traceId, start, end):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""
@@ -578,6 +581,7 @@ def statistics_groups_module(traceId, start, end):
 ################################################################
 @app.route('/api/1/statistics/process/<int:traceId>/<int:start>/<int:end>/<int:tgid>', methods=['GET', 'POST'])
 def statistics_process(traceId, start, end, tgid):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""
@@ -640,6 +644,7 @@ def statistics_process(traceId, start, end, tgid):
 ################################################################
 @app.route('/api/1/statistics/thread/<int:traceId>/<int:start>/<int:end>/<int:pid>', methods=['GET', 'POST'])
 def statistics_thread(traceId, start, end, pid):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""
@@ -702,6 +707,7 @@ def statistics_thread(traceId, start, end, pid):
 ################################################################
 @app.route('/api/1/statistics/module/<int:traceId>/<int:start>/<int:end>/<int:module_id>', methods=['GET', 'POST'])
 def statistics_module(traceId, start, end, module_id):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""
@@ -769,6 +775,7 @@ def statistics_module(traceId, start, end, module_id):
 #
 @app.route('/api/1/statistics/callers/<int:traceId>/<int:start>/<int:end>/<int:tgid>/<int:symbol_id>', methods=['GET', 'POST'])
 def statistics_callers(traceId, start, end, tgid, symbol_id):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         named_cur.execute("""
@@ -795,6 +802,7 @@ def statistics_callers(traceId, start, end, tgid, symbol_id):
 ################################################################
 @app.route('/api/1/trace/<int:traceId>', methods=['DELETE'])
 def delete_trace(traceId):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     try:
         cur.execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE;")
@@ -812,6 +820,7 @@ def delete_trace(traceId):
 ################################################################
 @app.route('/api/1/trace/<int:traceId>', methods=['POST'])
 def post_trace(traceId):
+    cur, named_cur = begin_db_request()
     js = request.json
     try:
         for key in js:
@@ -830,6 +839,7 @@ def post_trace(traceId):
 ################################################################
 @app.route('/api/1/trace/<int:traceId>', methods=['GET'])
 def get_trace(traceId):
+    cur, named_cur = begin_db_request()
     named_cur.execute("SELECT * FROM public.traces WHERE id = %s",(traceId,))
     row = named_cur.fetchone()
     return json.dumps(row, default= dthandler)
@@ -837,6 +847,7 @@ def get_trace(traceId):
 
 @app.route('/api/1/traces/', methods=['GET', 'POST'])
 def get_traces():
+    cur, named_cur = begin_db_request()
     named_cur.execute("SELECT * FROM public.traces order by id")
     results = named_cur.fetchall()
     return json.dumps(results, default= dthandler)
@@ -847,6 +858,7 @@ def get_traces():
 #
 ################################################################
 def getFullAvgGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
+    cur, named_cur = begin_db_request()
     tsc_tick = get_tsc_tick(schema)
     cur.execute("""
     select x, thread_id, round((ins::numeric*1000/%s)/(%s::numeric/1000000),1) from (
@@ -894,6 +906,7 @@ def getFullAvgGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
 #
 ################################################################
 def getFullGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
+    cur, named_cur = begin_db_request()
     cur.execute("""select gen_ts, thread_id, sum(part2)::int from
             (
             select * ,
@@ -959,6 +972,7 @@ def getFullGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
 
 @app.route('/api/1/graph/<int:traceId>/full/<int:pixels>', methods=['GET', 'POST'])
 def graph_full(traceId, pixels):
+    cur, named_cur = begin_db_request()
     if request.method == 'GET':
         cur.execute("select cpu_count from public.traces where id = %s",(traceId,))
         cpus = cur.fetchone()
@@ -996,6 +1010,7 @@ def graph_full(traceId, pixels):
 
 
 def getGraphAvgPerCpu(schema, cpu, start_time, end_time, time_slice):
+    cur, named_cur = begin_db_request()
     tsc_tick = get_tsc_tick(schema)
     cur.execute("""
     select x, thread_id, round((ins::numeric*1000/%s)/(%s::numeric/1000000),1) from (
@@ -1029,6 +1044,7 @@ def getGraphAvgPerCpu(schema, cpu, start_time, end_time, time_slice):
     return traces, row_count
 
 def getGraphPerCpu(schema, cpu, start_time, end_time, time_slice, gen_start, gen_end):
+    cur, named_cur = begin_db_request()
     tsc_tick = get_tsc_tick(schema)
     cur.execute("""
         select x, thread_id, round((ins::numeric*1000/%s)/(%s::numeric/1000000),1) from (
@@ -1105,6 +1121,7 @@ def getGraphPerCpu(schema, cpu, start_time, end_time, time_slice, gen_start, gen
 
 @app.route('/api/1/graph/<int:traceId>/<int:pixels>/<int:start>/<int:end>', methods=['GET', 'POST'])
 def graph(traceId, pixels, start, end):
+    cur, named_cur = begin_db_request()
     if request.method == 'GET':
         cur.execute("select cpu_count from public.traces where id = %s",(traceId,))
         cpus = cur.fetchone()
@@ -1182,6 +1199,7 @@ def graph(traceId, pixels, start, end):
 #
 @app.route('/api/1/search/<int:traceId>', methods=['GET', 'POST'])
 def search(traceId):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     if "search" in request.json and len(request.json['search']):
         named_cur.execute("""SELECT symbol.id, symbol from """+schema+""".symbol
@@ -1201,6 +1219,7 @@ def search(traceId):
 #
 @app.route('/api/1/search/hits/<int:traceId>', methods=['GET', 'POST'])
 def search_hits(traceId):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     if "ids" in request.json and len(request.json['ids']):
         ids = ""
@@ -1227,6 +1246,7 @@ def search_hits(traceId):
 #
 @app.route('/api/1/search/<int:traceId>/<int:pixels>/<int:start_time>/<int:end_time>/<int:symbol_id>', methods=['GET', 'POST'])
 def search_full(traceId,pixels,start_time,end_time,symbol_id):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     time_slice = (end_time - start_time -1) / pixels
     if DEBUG:
@@ -1258,6 +1278,7 @@ def search_full(traceId,pixels,start_time,end_time,symbol_id):
 #
 @app.route('/api/1/search/overflow/<int:traceId>/<int:pixels>/<int:start_time>/<int:end_time>', methods=['GET', 'POST'])
 def search_full_overflow(traceId,pixels,start_time,end_time):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     time_slice = (end_time - start_time -1) / pixels
     if DEBUG:
@@ -1294,6 +1315,7 @@ def search_full_overflow(traceId,pixels,start_time,end_time):
 #
 @app.route('/api/1/search/lost/<int:traceId>/<int:pixels>/<int:start_time>/<int:end_time>', methods=['GET', 'POST'])
 def search_full_lost(traceId,pixels,start_time,end_time):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     time_slice = (end_time - start_time -1) / pixels
     if DEBUG:
@@ -1331,6 +1353,7 @@ def search_full_lost(traceId,pixels,start_time,end_time):
 ################################################################
 @app.route('/api/1/cbr/<int:traceId>/<int:start_time>/<int:end_time>', methods=['GET', 'POST'])
 def cbr(traceId,start_time,end_time):
+    cur, named_cur = begin_db_request()
     schema = "t" + str(traceId)
     if end_time == 0:
         named_cur.execute("""select * from """+schema+""".cbr""")
