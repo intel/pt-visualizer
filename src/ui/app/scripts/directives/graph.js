@@ -24,10 +24,10 @@
     .directive('satGraph', satGraph);
 
   satGraph.$inject = ['$http', '$compile', '$rootScope', '$routeParams', '$timeout', 'graphService',
-    'broadcastService', 'processInfo', 'traceInfo', 'bookmark', '$window', 'Flash'];
+    'memHeatmapService', 'broadcastService', 'processInfo', 'traceInfo', 'bookmark', '$window', 'Flash'];
 
-  function satGraph($http, $compile, $rootScope, $routeParams, $timeout, graphService, bcService,
-      processInfoService, traceInfoService, bookmarkService, $window, Flash) {
+  function satGraph($http, $compile, $rootScope, $routeParams, $timeout, graphService, memHeatmapService,
+    bcService, processInfoService, traceInfoService, bookmarkService, $window, Flash) {
 
   // constants
   var marginRight = 20;
@@ -248,6 +248,11 @@
       var codeSelection = overlay
         .append('svg:rect');
 
+      var memHeatmapInit = d3.select(element[0]).select('.memheatmap');
+      var memHeatmapData = memHeatmapService.getData();
+
+      Plotly.plot(memHeatmapInit.node(),
+                  memHeatmapData.heatmapData, memHeatmapData.heatmapLayout);
       /**
       * Menu handling overflow
       */
