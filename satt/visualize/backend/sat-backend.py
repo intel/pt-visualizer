@@ -18,7 +18,9 @@ import sys
 import psycopg2
 import psycopg2.extras
 import datetime
+import math
 import simplejson as json
+from operator import itemgetter
 from flask import Flask, request, jsonify, send_file, abort
 from werkzeug import secure_filename
 import glob
@@ -1365,5 +1367,63 @@ def cbr(traceId,start_time,end_time):
            for i, value in enumerate(row)) for row in rows]
     return jsonify({"data":r})
 
+
+#
+# Memory Heatmap Full Dataset
+#
+@app.route('/api/1/heatmap/full/<int:plot_w>/<int:plot_h>', methods=['GET'])
+def memheatmap_full(plot_w, plot_h):
+    cur, named_cur = begin_db_request()
+    cur.execute("""select ip, length(opcode), exec_count from instructions""")
+    rows = cur.fetchall()
+    rows.sort(key=itemgetter(0))
+    address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0]]
+    for row in rows:
+        if row[0] - address_ranges[-1][1] > 65535:
+            address_ranges.append([row[0], row[0] + row[1], 0, 0])
+        else:
+            address_ranges[-1][1] = row[0] + row[1]
+    total_cells = 0
+    for idx in range(0, len(address_ranges)):
+        address_ranges[idx][2] = address_ranges[idx][1] - \
+                                 address_ranges[idx][0] + 1
+        total_cells += address_ranges[idx][2]
+
+    available_cells = plot_w * plot_h
+    mapping = math.ceil(1.0 * total_cells / available_cells)
+
+    crt_total = 0
+    for idx in range(0, len(address_ranges)):
+        if idx == 0:
+            address_ranges[idx][3] = 0
+        else:
+            address_ranges[idx][3] = crt_total // mapping
+        crt_total += address_ranges[idx][2]
+
+    linear_result = [0] * available_cells
+    current_range = 0
+    for row in rows:
+        if row[0] > address_ranges[current_range][1]:
+            current_range += 1
+        start_address = address_ranges[current_range][3] + \
+                        (row[0] - address_ranges[current_range][0]) // mapping
+        start = int(start_address)
+        end = start + int(row[1] // mapping) + 1
+        for idx in range(start, end):
+            linear_result[idx] += 1
+
+    # Normalize result
+    m = max(linear_result)
+    for idx in range(0, available_cells):
+        linear_result[idx] = int(math.floor(255.0 * linear_result[idx] / m))
+
+    # Create result data
+    result = {}
+    for idx in range(0, available_cells):
+        if linear_result[idx] != 0:
+            result[idx] = linear_result[idx]
+    return jsonify({"data":result})
+
+
 if __name__ == '__main__':
-    app.run()
+    app.run(host="0.0.0.0", port=5005)

@@ -249,10 +249,20 @@
         .append('svg:rect');
 
       var memHeatmapInit = d3.select(element[0]).select('.memheatmap');
-      var memHeatmapData = memHeatmapService.getData();
+      var memHeatmapData = memHeatmapService.getInitialData();
 
       Plotly.plot(memHeatmapInit.node(),
                   memHeatmapData.heatmapData, memHeatmapData.heatmapLayout);
+
+      $http({method: 'GET', url: '/api/1/heatmap/full/1600/400'})
+            .success(function(respdata/*, status, headers, config*/) {
+              Plotly.plot(memHeatmapInit.node(),
+                          memHeatmapService.getArrayFromSparseData(
+                            respdata.data, 1600, 400),
+                          memHeatmapData.heatmapLayout);
+            }).error(function(data, status, headers, config) {
+              console.log("Error retrieving full heatmap: ", status);
+      });
       /**
       * Menu handling overflow
       */
