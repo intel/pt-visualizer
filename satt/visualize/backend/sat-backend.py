@@ -974,6 +974,7 @@ def getFullGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
 
 @app.route('/api/1/graph/<int:traceId>/full/<int:pixels>', methods=['GET', 'POST'])
 def graph_full(traceId, pixels):
+    return ''
     cur, named_cur = begin_db_request()
     if request.method == 'GET':
         cur.execute("select cpu_count from public.traces where id = %s",(traceId,))
@@ -1371,10 +1372,11 @@ def cbr(traceId,start_time,end_time):
 #
 # Memory Heatmap Full Dataset
 #
-@app.route('/api/1/heatmap/full/<int:plot_w>/<int:plot_h>', methods=['GET'])
-def memheatmap_full(plot_w, plot_h):
+@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>', methods=['GET'])
+def memheatmap_full(traceId, plot_w, plot_h):
     cur, named_cur = begin_db_request()
-    cur.execute("""select ip, length(opcode), exec_count from instructions""")
+    schema = "pt" + str(traceId)
+    cur.execute("""select ip, length(opcode), exec_count from """+schema+""".instructions""")
     rows = cur.fetchall()
     rows.sort(key=itemgetter(0))
     address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0]]

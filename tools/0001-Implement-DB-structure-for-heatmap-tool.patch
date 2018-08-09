@@ -1,18 +1,27 @@
-From 9aa7ea008f0e4e9e57532c48e24f2cb4e612ed3d Mon Sep 17 00:00:00 2001
+From 9b33753ea863f0eb48c60f44aed438089bc9d5c2 Mon Sep 17 00:00:00 2001
 From: Florin Papa <florin.papa@intel.com>
-Date: Tue, 7 Aug 2018 14:33:43 -0700
+Date: Thu, 9 Aug 2018 11:51:13 -0700
 Subject: [PATCH] Implement DB structure for heatmap tool
 
 ---
- tools/perf/scripts/python/export-to-postgresql.py  | 447 +++++----------------
+ tools/perf/scripts/python/export-to-postgresql.py  | 501 ++++++---------------
  .../util/scripting-engines/trace-event-python.c    |  15 +-
- 2 files changed, 117 insertions(+), 345 deletions(-)
+ 2 files changed, 155 insertions(+), 361 deletions(-)
 
 diff --git a/tools/perf/scripts/python/export-to-postgresql.py b/tools/perf/scripts/python/export-to-postgresql.py
-index efcaf6c..a6ed011 100644
+index efcaf6c..b83c4fc 100644
 --- a/tools/perf/scripts/python/export-to-postgresql.py
 +++ b/tools/perf/scripts/python/export-to-postgresql.py
-@@ -227,35 +227,14 @@ perf_db_export_callchains = False
+@@ -14,6 +14,8 @@ import os
+ import sys
+ import struct
+ import datetime
++import multiprocessing
++import platform
+ 
+ # To use this script you will need to have installed package python-pyside which
+ # provides LGPL-licensed Python bindings for Qt.  You will also need the package
+@@ -227,272 +229,100 @@ perf_db_export_callchains = False
  
  
  def usage():
@@ -27,8 +36,8 @@ index efcaf6c..a6ed011 100644
 +if (len(sys.argv) < 1):
  	usage()
  
- dbname = sys.argv[1]
- 
+-dbname = sys.argv[1]
+-
 -if (len(sys.argv) >= 3):
 -	columns = sys.argv[2]
 -else:
@@ -47,11 +56,63 @@ index efcaf6c..a6ed011 100644
 -	else:
 -		usage()
 -
- output_dir_name = os.getcwd() + "/" + dbname + "-perf-data"
- os.mkdir(output_dir_name)
+-output_dir_name = os.getcwd() + "/" + dbname + "-perf-data"
+-os.mkdir(output_dir_name)
++dbname = 'sat'
++dbuser = 'sat'
++dbpass = 'uranus'
++dbgivenname = sys.argv[1]
  
-@@ -285,214 +264,49 @@ db.open()
+ def do_query(q, s):
+ 	if (q.exec_(s)):
+ 		return
+ 	raise Exception("Query failed: " + q.lastError().text())
+ 
+-print datetime.datetime.today(), "Creating database..."
++print datetime.datetime.today(), "Creating database schema..."
+ 
+ db = QSqlDatabase.addDatabase('QPSQL')
  query = QSqlQuery(db)
+-db.setDatabaseName('postgres')
++db.setDatabaseName(dbname)
++db.setUserName(dbuser)
++db.setPassword(dbpass)
+ db.open()
++
++uname = os.uname()
++linux_distr = platform.linux_distribution()
++cpu_count = multiprocessing.cpu_count()
++device = uname[1] + "/" + " ".join(linux_distr)
++build = uname[3] + "/" + uname[0]
++do_query(query, 'INSERT INTO public.traces (name, cpu_count, device, created, build) '
++				'values (\'' + dbgivenname + '\', \'' + str(cpu_count) + '\', ' + '\'' + device + '\','
++				' now(), \'' + build + '\') RETURNING id')
++if not query.next():
++	raise Exception("Error retrieving schema id")
++else:
++	schema_id = query.value(0)
++dbschema = "pt" + str(schema_id)
++
++output_dir_name = os.getcwd() + "/" + dbschema + "-perf-data"
++os.mkdir(output_dir_name)
++
+ try:
+-	do_query(query, 'CREATE DATABASE ' + dbname)
++    do_query(query, 'CREATE SCHEMA ' + dbschema)
+ except:
+-	os.rmdir(output_dir_name)
+-	raise
+-query.finish()
+-query.clear()
+-db.close()
++    os.rmdir(output_dir_name)
++    raise
+ 
+-db.setDatabaseName(dbname)
+-db.open()
+-
+-query = QSqlQuery(db)
++do_query(query, 'SET search_path TO ' + dbschema)
  do_query(query, 'SET client_min_messages TO WARNING')
  
 -do_query(query, 'CREATE TABLE selected_events ('
@@ -300,7 +361,22 @@ index efcaf6c..a6ed011 100644
  
  
  file_header = struct.pack("!11sii", "PGCOPY\n\377\r\n\0", 0, 0)
-@@ -540,114 +354,53 @@ def remove_output_file(file):
+@@ -515,9 +345,13 @@ def copy_output_file_direct(file, table_name):
+ 
+ # Use COPY FROM STDIN because security may prevent postgres from accessing the files directly
+ def copy_output_file(file, table_name):
+-	conn = PQconnectdb("dbname = " + dbname)
++	conn = PQconnectdb("dbname = " + dbname + " user = " + dbuser + " password = " + dbpass)
+ 	if (PQstatus(conn)):
+ 		raise Exception("COPY FROM STDIN PQconnectdb failed")
++	sql = "SET search_path TO " + dbschema
++	res = PQexec(conn, sql)
++	if (PQresultStatus(res) != 1):
++		raise Exception("COPY FROM STDIN PQexec failed - setting schema search path")
+ 	file.write(file_trailer)
+ 	file.seek(0)
+ 	sql = "COPY " + table_name + " FROM STDIN (FORMAT 'binary')"
+@@ -540,114 +374,55 @@ def remove_output_file(file):
  	file.close()
  	os.unlink(name)
  
@@ -358,8 +434,9 @@ index efcaf6c..a6ed011 100644
 -		copy_output_file(call_path_file,	"call_paths")
 -	if perf_db_export_calls:
 -		copy_output_file(call_file,		"calls")
--
-+	
++	copy_output_file(thread_file,		"threads")
++
+ 
  	print datetime.datetime.today(), "Removing intermediate files..."
 -	remove_output_file(evsel_file)
 -	remove_output_file(machine_file)
@@ -434,7 +511,7 @@ index efcaf6c..a6ed011 100644
  
  	if (unhandled_count):
  		print datetime.datetime.today(), "Warning: ", unhandled_count, " unhandled events"
-@@ -661,65 +414,75 @@ def sched__sched_switch(*x):
+@@ -661,65 +436,75 @@ def sched__sched_switch(*x):
  	pass
  
  def evsel_table(evsel_id, evsel_name, *x):
