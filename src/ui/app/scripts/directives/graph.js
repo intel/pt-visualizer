@@ -23,11 +23,11 @@
     .module('satt')
     .directive('satGraph', satGraph);
 
-  satGraph.$inject = ['$http', '$compile', '$rootScope', '$routeParams', '$timeout',
-    'memHeatmapService', 'broadcastService', 'processInfo', 'traceInfo', 'bookmark', '$window', 'Flash'];
+  satGraph.$inject = ['$http', '$compile', '$rootScope', '$routeParams', '$timeout', 'graphService',
+    'broadcastService', 'processInfo', 'traceInfo', 'bookmark', '$window', 'Flash'];
 
-  function satGraph($http, $compile, $rootScope, $routeParams, $timeout, memHeatmapService,
-    bcService, processInfoService, traceInfoService, bookmarkService, $window, Flash) {
+  function satGraph($http, $compile, $rootScope, $routeParams, $timeout, graphService, bcService,
+      processInfoService, traceInfoService, bookmarkService, $window, Flash) {
 
   // constants
   var marginRight = 20;
@@ -160,42 +160,42 @@
       */
       var data=null;
 
-      // //var data = graphService.getData(width - marginRight - 2, scope.startt, scope.endt);
-      // var graphUrl = null;
+      //var data = graphService.getData(width - marginRight - 2, scope.startt, scope.endt);
+      var graphUrl = null;
 
-      // if ( parseInt(attrs.startt, 10) === 0 && parseInt(attrs.endt, 10) === 0) {
-      //   graphUrl = '/api/1/graph/'+$routeParams.traceID+'/full/'+(width - marginRight - 2);
-      // }
-      // else {
-      //   graphUrl = '/api/1/graph/'+$routeParams.traceID+
-      //         '/' + (width - marginRight - 2) +
-      //         '/' + Math.round(attrs.startt) +
-      //         '/' + Math.round(attrs.endt);
-      // }
-      // $http({method: 'GET', url: graphUrl})
-      // .success(function(respdata/*, status, headers, config*/) {
-      //     data = respdata;
-      //     /*
-      //     * init GraphObj
-      //     */
-      //     graphObj.start(data.start);
-      //     graphObj.end(data.end);
-      //     gObj.initData();
-      //     gObj.draw();
+      if ( parseInt(attrs.startt, 10) === 0 && parseInt(attrs.endt, 10) === 0) {
+        graphUrl = '/api/1/graph/'+$routeParams.traceID+'/full/'+(width - marginRight - 2);
+      }
+      else {
+        graphUrl = '/api/1/graph/'+$routeParams.traceID+
+              '/' + (width - marginRight - 2) +
+              '/' + Math.round(attrs.startt) +
+              '/' + Math.round(attrs.endt);
+      }
+      $http({method: 'GET', url: graphUrl})
+      .success(function(respdata/*, status, headers, config*/) {
+          data = respdata;
+          /*
+          * init GraphObj
+          */
+          graphObj.start(data.start);
+          graphObj.end(data.end);
+          gObj.initData();
+          gObj.draw();
 
-      //     // Check for Search Hits
-      //     checkSearchHits(scope);
+          // Check for Search Hits
+          checkSearchHits(scope);
 
-      //     // Scroll to Beginning of the Graph
-      //     var target = $('#graph-'+scope.$id).offset().top;
-      //     $('body,html').animate({scrollTop: target}, 'slow');
+          // Scroll to Beginning of the Graph
+          var target = $('#graph-'+scope.$id).offset().top;
+          $('body,html').animate({scrollTop: target}, 'slow');
 
-      //   })
-      // .error(function(/*data, status, headers, config*/) {
-      //   // called asynchronously if an error occurs
-      //   // or server returns response with status
-      //   // code outside of the <200, 400) range
-      // });
+        })
+      .error(function(/*data, status, headers, config*/) {
+        // called asynchronously if an error occurs
+        // or server returns response with status
+        // code outside of the <200, 400) range
+      });
 
       bookmarkService.addGraph(scope.$id,attrs.startt,attrs.endt);
 
@@ -248,21 +248,6 @@
       var codeSelection = overlay
         .append('svg:rect');
 
-      var memHeatmapInit = d3.select(element[0]).select('.memheatmap');
-      var memHeatmapData = memHeatmapService.getInitialData();
-
-      Plotly.plot(memHeatmapInit.node(),
-                  memHeatmapData.heatmapData, memHeatmapData.heatmapLayout);
-
-      $http({method: 'GET', url: '/api/1/heatmap/'+$routeParams.traceID+'/full/1600/400'})
-            .success(function(respdata/*, status, headers, config*/) {
-              Plotly.plot(memHeatmapInit.node(),
-                          memHeatmapService.getArrayFromSparseData(
-                            respdata.data, 1600, 400),
-                          memHeatmapData.heatmapLayout);
-            }).error(function(data, status, headers, config) {
-              console.log("Error retrieving full heatmap: ", status);
-      });
       /**
       * Menu handling overflow
       */
