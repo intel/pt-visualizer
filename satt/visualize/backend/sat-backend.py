@@ -981,7 +981,9 @@ def memheatmap_full(traceId, plot_w, plot_h):
     # Normalize result
     m = max(linear_result)
     for idx in range(0, available_cells):
-        linear_result[idx] = int(math.floor(255.0 * linear_result[idx] / m))
+        if linear_result[idx] > 0:
+            linear_result[idx] = int(math.floor(
+                                     2047.0 * linear_result[idx] / m))
 
     # Create result data
     result = {}

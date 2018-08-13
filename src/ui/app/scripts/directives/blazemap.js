@@ -45,7 +45,8 @@
           };
         };
 
-        var createColorGradient = function(startColor, endColor, steps) {
+        var createColorGradientSegment = function(startColor, endColor,
+                                                  gradArray, index, length) {
           var start = intToRGB(parseHTMLColor(startColor));
           var end = intToRGB(parseHTMLColor(endColor));
           var delta = {
@@ -54,35 +55,50 @@
             b: end.b - start.b
           };
           var incr = {
-            r: delta.r / (steps - 1),
-            g: delta.g / (steps - 1),
-            b: delta.b / (steps - 1)
+            r: delta.r / (length - 1),
+            g: delta.g / (length - 1),
+            b: delta.b / (length - 1)
           };
-          var arraySize = steps << 2;
-          var gradient = new Uint8Array(arraySize);
+          var arraySize = length << 2;
           for (var crtByte = 0; crtByte < arraySize; ++crtByte) {
             switch (crtByte & 3) {
-              case 0: gradient[crtByte] = start.r; break;
-              case 1: gradient[crtByte] = start.g; break;
-              case 2: gradient[crtByte] = start.b; break;
+              case 0: gradArray[index] = start.r; break;
+              case 1: gradArray[index] = start.g; break;
+              case 2: gradArray[index] = start.b; break;
               case 3:
-                      gradient[crtByte] = 255;
+                      gradArray[index] = 255;
                       start.r += incr.r;
                       start.g += incr.g;
                       start.b += incr.b;
               break;
             }
+            index += 1;
+          }
+        };
+
+        var createColorGradient = function(colorArray, gradientLength) {
+          var arraySize = gradientLength << 2;
+          var gradient = new Uint8Array(arraySize);
+          var segmentSize = gradientLength / (colorArray.length - 1);
+          var currentIndex = 0
+          for (var seg = 0; seg < colorArray.length - 1; ++seg) {
+            if (seg == colorArray.length - 2) {
+              segmentSize = gradientLength - (currentIndex >> 2);
+            }
+            createColorGradientSegment(colorArray[seg], colorArray[seg + 1],
+                                       gradient, currentIndex, segmentSize);
+            currentIndex += (segmentSize << 2);
           }
           return gradient;
-        };
+        }
 
         var Blaze = function(canvasObj) {
           this.drawingSurface = canvasObj;
           console.log(this.drawingSurface);
           console.log(this.drawingSurface.width);
           this.config = {
-            startColor: '#0A0A0A',
-            endColor: '#FF2030',
+            heatmapColors: ['#FFFFFF', '#8299ED', '#82EDA9',
+                            '#DDED82', '#FF0000'],
             cursorColor: '#FF2020'
           };
 
@@ -104,6 +120,7 @@
             if (this.active) {
               var oldStrokeStyle = ctx.strokeStyle;
               ctx.strokeStyle = this.color;
+              ctx.lineWidth = 1;
               ctx.beginPath();
               ctx.moveTo(0, this.y);
               ctx.lineTo(ctx.canvas.width - 1, this.y);
@@ -118,8 +135,8 @@
 
           this.backBuffer = createCanvas(this.drawingSurface.width,
                                          this.drawingSurface.height);
-          this.colorGradient = createColorGradient(this.config.startColor,
-                                                   this.config.endColor, 256);
+          this.colorGradient = createColorGradient(this.config.heatmapColors,
+                                                   2048);
 
           this.drawOverlays = function(ctx) {
             for (var idx in this.overlays) {
@@ -172,7 +189,7 @@
           this.updateBackbufferFromData = function() {
             var drawCtx = this.backBuffer.getContext('2d');
 
-            drawCtx.fillStyle = this.config.startColor;
+            drawCtx.fillStyle = this.config.heatmapColors[0];
             drawCtx.fillRect(0, 0, this.backBuffer.width,
                              this.backBuffer.height);
 
