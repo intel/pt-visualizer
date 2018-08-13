@@ -22,9 +22,9 @@
     .module('satt')
     .controller('MainCtrl', MainCtrl);
 
-  MainCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', 'menuService', 'traceInfo', '$window', 'Flash'];
+  MainCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', 'menuService', '$window', 'Flash'];
 
-  function MainCtrl($scope, $rootScope, $resource, $location, menuService, traceInfo, win, flash) {
+  function MainCtrl($scope, $rootScope, $resource, $location, menuService, win, flash) {
 
     $scope.showScreenShot = false;
 
@@ -56,7 +56,6 @@
     };
 
     $scope.showinfo = function (id, event, index) {
-      $scope.traceinfo = null;
       $scope.selectTrace = $scope.traces[index];
       $scope.traceInfoId = id;
       $scope.showScreenShot = $scope.traces[index].screenshot;

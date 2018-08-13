@@ -71,25 +71,6 @@ limitations under the License.
                   </li>
               </ul>
             </div><!--/.nav-collapse -->
-            <!-- Trace Info Popup -->
-            <div ng-cloak ng-style="infoy" ng-show="infoVisible" class="traceinfo">
-              <div><b>Trace {{traceId}}</b> - {{selectTrace.device}} - <b>Contact:</b> {{selectTrace.contact}}</div>
-              <div class="span8">
-              <table class="table table-striped">
-                  <tbody class="table-rows">
-                      <tr ng-repeat="row in traceInfo">
-                          <td>{{row.key}}</td>
-                          <td><div class='text-right'>{{row.value}}</div></td>
-                          <td>{{row.info}}</td>
-                      </tr>
-                  </tbody>
-              </table>
-              </div>
-              <div ng-if="showScreenShot" class="span4">
-                  <img ng-src="/api/1/screenshot/{{traceId}}/screen.png" />
-              </div>
-            </div>
-            <!-- Trace Info Popup END -->
             <!-- Upload button -->
             <div class="upload cloak pull-right">
               <div flow-init

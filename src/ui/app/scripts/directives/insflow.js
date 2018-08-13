@@ -22,9 +22,9 @@
     .module('satt')
     .directive('insflow', insflow);
 
-  insflow.$inject = ['$routeParams','$http', 'graphService','broadcastService','$rootScope','traceInfo','bookmark'];
+  insflow.$inject = ['$routeParams','$http', 'graphService','broadcastService','$rootScope', 'bookmark'];
 
-  function insflow($routeParams, $http, graphService,broadcastService,$rootScope,traceInfoService,bookmarkService) {
+  function insflow($routeParams, $http, graphService,broadcastService,$rootScope,bookmarkService) {
     return {
       templateUrl : 'views/insflow.html',
       restrict: 'E',
@@ -43,9 +43,6 @@
         scope.autoOpenFlow = true;
 
         var minLevel = 0;
-
-        /* This is guaranteed by routeProvider resolve */
-        var tscTickToMs = 1/(parseInt(traceInfoService.getData().TSC_TICK,10)/1000000);
 
         /**
         * Handle Window manager Destroy event
@@ -196,10 +193,7 @@
               var durationTotal = 0;
               for(var x=0; x<respdata.data.length; x++)
               {
-                respdata.data[x].time = Math.round(traceInfoService.tscTicksToNs(respdata.data[x].ts));
                 respdata.data[x].duration_tsc = respdata.data[x].it + respdata.data[x].of;
-                respdata.data[x].it = Math.round(respdata.data[x].it * tscTickToMs);
-                respdata.data[x].of = Math.round(respdata.data[x].of * tscTickToMs);
                 respdata.data[x].duration = respdata.data[x].it + respdata.data[x].of;
                 respdata.data[x].tPerIns = Math.round(respdata.data[x].duration / respdata.data[x].in);
                 respdata.data[x].parent = scope.calls[index].id;
@@ -315,10 +309,7 @@
 
               for(var x=0; x<respdata.data.length; x++)
               {
-                respdata.data[x].time = Math.round(traceInfoService.tscTicksToNs(respdata.data[x].ts));
                 respdata.data[x].duration_tsc = respdata.data[x].it + respdata.data[x].of;
-                respdata.data[x].it = Math.round(respdata.data[x].it * tscTickToMs);
-                respdata.data[x].of = Math.round(respdata.data[x].of * tscTickToMs);
                 respdata.data[x].duration = respdata.data[x].it + respdata.data[x].of;
                 respdata.data[x].tPerIns = Math.round(respdata.data[x].duration / respdata.data[x].in);
                 respdata.data[x].parent = scope.calls[index].id;
@@ -383,10 +374,7 @@
             {
               respdata.data[x].cl = 'e';
             }
-            respdata.data[x].time = Math.round(traceInfoService.tscTicksToNs(respdata.data[x].ts));
             respdata.data[x].duration_tsc = respdata.data[x].it + respdata.data[x].of;
-            respdata.data[x].it = Math.round(respdata.data[x].it * tscTickToMs);
-            respdata.data[x].of = Math.round(respdata.data[x].of * tscTickToMs);
             respdata.data[x].duration = respdata.data[x].it + respdata.data[x].of;
             respdata.data[x].tPerIns = Math.round(respdata.data[x].duration / respdata.data[x].in);
             respdata.data[x].level = new Array(respdata.data[x].l - minLevel + 1).join('-') + '| ';

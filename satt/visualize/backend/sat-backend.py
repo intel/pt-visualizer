@@ -92,44 +92,6 @@ def begin_db_request():
             db.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor))
 
 
-@app.route('/api/1/screenshot/<int:trace_id>/screen.png', methods=['GET'])
-def screenshot(trace_id):
-    cur, named_cur = begin_db_request()
-    # backend tmp directory path
-    tmp_path = os.path.join(SAT_HOME, 'satt', 'visualize', 'backend', 'tmp')
-    trace_screenshot = tmp_path + str(trace_id) + ".png"
-    print trace_screenshot
-
-    # check if picture exists in tmp file already
-    if not os.path.isfile(trace_screenshot):
-        cur.execute("SELECT file_data FROM public.screenshots WHERE id = %s", (trace_id,))
-        file_data = cur.fetchone()
-        if file_data:
-            if not os.path.exists(os.path.dirname(tmp_path)):
-                os.makedirs(tmp_path)
-
-            fp = open(trace_screenshot, 'wb')
-            fp.write(str(file_data[0]))
-            fp.close()
-        else:
-            abort(404)
-    response = send_file(trace_screenshot, as_attachment=True, attachment_filename='screen.png')
-    return response
-
-
-def get_or_create_file(chunk, dst):
-    if chunk == 0:
-        f = file(dst, 'wb')
-    else:
-        f = file(dst, 'ab')
-    return f
-
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
-
-
 @app.route('/api/1/upload', methods=['GET'])
 def upload_resume():
     flowCurrentChunkSize = request.args.get('flowCurrentChunkSize', False)
@@ -202,36 +164,10 @@ def trace_id(id):
     return app.send_static_file('index.html')
 
 
-@app.route('/trace/components/<string:endpoint>/<string:endpoint2>', methods=['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])
-def components(endpoint, endpoint2):
-    print '/components/' + endpoint + '/' + endpoint2
-    return app.send_static_file('components/' + endpoint + '/' + endpoint2)
-
-
 @app.route('/admin/views/admin/<string:endpoint>', methods=['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])
 def admin_view(endpoint):
     print '/views/admin/' + endpoint
     return app.send_static_file('views/admin/' + endpoint)
-
-
-@app.route('/trace/<string:path>/<string:endpoint>', methods=['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])
-def trace(path, endpoint):
-    return app.send_static_file(path + '/' + endpoint)
-
-
-# Helper to get tsc tick
-def get_tsc_tick(schema):
-    cur, named_cur = begin_db_request()
-    cur.execute("select exists(select * from information_schema.tables where table_name=%s and table_schema=%s)", ('info', schema,))
-    res = cur.fetchone()
-    if res[0]:
-        named_cur.execute("SELECT value from " + schema + ".info WHERE key = 'TSC_TICK'")
-        if DEBUG:
-            print named_cur.query
-        tsc_tick = named_cur.fetchone()
-        return tsc_tick[0]
-    else:
-        return 1330000
 
 
 def create_bookmark():
@@ -300,29 +236,15 @@ def updateBookmark():
 @app.route('/api/1/traceinfo/<int:traceId>')
 def traceinfo(traceId):
     cur, named_cur = begin_db_request()
-    schema = "t" + str(traceId)
-    rows = []
     data = {}
-    # Backward compatibility check, if info table exists
-    cur.execute("select exists(select * from information_schema.tables where table_name=%s and table_schema=%s)", ('info',schema,))
-    res = cur.fetchone()
-    if res[0]:
-        named_cur.execute("""SELECT * FROM """+schema+""".info order by key""")
-        if DEBUG:
-            print named_cur.query
-        rows = named_cur.fetchall()
-
-    if not rows:
-        rows = [{"key":"TSC_TICK", "info":"Time Stamp Counter tick", "value":1330000},
-                {"key":"FSB_MHZ", "info":"Front-side Bus MHz", "value":200}]
-
-    data['infos'] = rows
+    data['infos'] = []
 
     named_cur.execute("select * from public.traces where id=%s", (traceId, ))
     rows = named_cur.fetchall()
     data['trace'] = rows[0]
 
     return json.dumps(data, default=dthandler)
+
 
 # Helper funtion to merge insflow arrays
 # - Will check last existing line and it's timestamps
@@ -797,6 +719,7 @@ def statistics_callers(traceId, start, end, tgid, symbol_id):
     except Exception, e:
         print "problem".format(e)
 
+
 ################################################################
 #
 # Delete trace permanetly
@@ -805,7 +728,7 @@ def statistics_callers(traceId, start, end, tgid, symbol_id):
 @app.route('/api/1/trace/<int:traceId>', methods=['DELETE'])
 def delete_trace(traceId):
     cur, named_cur = begin_db_request()
-    schema = "t" + str(traceId)
+    schema = "pt" + str(traceId)
     try:
         cur.execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE;")
         cur.execute("DELETE FROM public.traces WHERE id = %s",(traceId,))
@@ -854,347 +777,7 @@ def get_traces():
     results = named_cur.fetchall()
     return json.dumps(results, default= dthandler)
 
-################################################################
-#
-# getFullAvgGraphPerCpu / private call
-#
-################################################################
-def getFullAvgGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
-    cur, named_cur = begin_db_request()
-    tsc_tick = get_tsc_tick(schema)
-    cur.execute("""
-    select x, thread_id, round((ins::numeric*1000/%s)/(%s::numeric/1000000),1) from (
-    select ts / %s as x,thread_id,sum as ins from (
-    select (gen_ts/%s)*%s as ts, thread_id, sum(sum), count(*) over (partition by gen_ts/%s) as ts_count
-    from """+schema+""".graph
-    where cpu = %s
-    group by gen_ts/%s, thread_id
-    order by ts
-    ) s where ts_count = 1 or sum <> 0
-    ) s1 """,(time_slice, tsc_tick, time_slice, time_slice,time_slice,time_slice,cpu,time_slice,))
 
-    if DEBUG:
-        print cur.query
-
-    results = cur.fetchall()
-    traces = {}
-    row_count = -1
-    new_row = -1
-    for row in results:
-        if not row[0] == new_row:
-            new_row = row[0]
-            row_count = row_count + 1
-        if not row[1] in traces:
-            # thread_id HACK to support 0/0 cur.execute("SELECT * from "+schema+".tgid where tgid = %s", (row[1],))
-            # if row[1] == '0/0':
-            #     cur.execute("SELECT * from "+schema+".tgid where tgid = %s", (0,))
-            # elif row[1] == '0/1':
-            #     cur.execute("SELECT * from "+schema+".tgid where tgid = %s", (0,))
-            # else:
-            named_cur.execute("SELECT * from "+schema+".tgid where id = %s", (row[1],))
-            if DEBUG:
-                print named_cur.query
-
-            name = named_cur.fetchone()
-            traces.update({row[1]: {"n":name.name,"id":name.id,"p":name.pid,"tgid":name.tgid,"color":name.color,"data":{} }})
-
-        traces[row[1]]['data'].update({row[0]:row[2]})
-
-    return traces, row_count
-
-################################################################
-#
-# getFullGraphPerCpu / private call
-#
-################################################################
-def getFullGraphPerCpu(schema, cpu, start_time, end_time, time_slice):
-    cur, named_cur = begin_db_request()
-    cur.execute("""select gen_ts, thread_id, sum(part2)::int from
-            (
-            select * ,
-            -- FINAL CALCULATION IS DONE HERE!!!!
-                CASE WHEN row_number() over(partition by id ) = 1 AND (gen_ts + %s) < (end_ts) THEN
-                -- THIS NEED Percent calcutation to figure out exec size
-                    -- ( Amount * Multiplier ) / slice
-                    --Multiplier
-                    (ins_count * (%s - ( great - gen_ts))::bigint) / (len +1)::real
-
-                ELSE
-                -- Check if we are in row 2 or so
-                    -- ( Amount * Multiplier ) / slice
-                    -- OPTION 1 or
-                    --(ins_count * CASE WHEN end_ts - great +1 >= %s THEN %s ELSE end_ts - great +1 END) / (len +1)
-                    -- OPTION 2 check witch one is faster
-                    CASE WHEN row_number() over(partition by id ) = 1 THEN
-                        ins_count::real
-                    ELSE
-                        (ins_count * CASE WHEN end_ts - great +1 >= %s THEN %s ELSE end_ts - great +1 END::bigint) / (len +1)::real
-                    END
-                END
-                as part2
-
-             from
-            (
-            select *, greatest(ts, gen_ts) as great from
-            (
-            select  end_ts - ts as len,
-                *,
-                generate_series(ts - (ts %% %s), end_ts, %s) as gen_ts
-            from
-            (
-            --SELECT lead(ts) over (order by id) -1 as end_ts ,*
-            SELECT lead(ts) over () -1 as end_ts ,*
-            FROM """+schema+""".ins
-            WHERE cpu = %s
-            ORDER BY ID
-            ) s2
-            ) s3
-            ) s4
-            ) s5
-            group by 1,2
-            order by gen_ts
-        """,(time_slice,time_slice,time_slice,time_slice,time_slice,time_slice,time_slice,time_slice,cpu))
-
-    results = cur.fetchall()
-    traces = {}
-    row_count = -1
-    new_row = -1
-    for row in results:
-        if not row[0] == new_row:
-            new_row = row[0]
-            row_count = row_count + 1
-        if not row[1] in traces:
-            named_cur.execute("SELECT * from "+schema+".tgid where id = %s", (row[1],))
-
-            name = named_cur.fetchone()
-            traces.update({row[1]: {"n":name.name,"id":name.id,"p":name.pid,"tgid":name.tgid,"tid":name.id,"color":name.color,"data":{} }} )
-        traces[row[1]]['data'].update({row_count:row[2]})
-    #print row_count
-    return traces, row_count
-
-@app.route('/api/1/graph/<int:traceId>/full/<int:pixels>', methods=['GET', 'POST'])
-def graph_full(traceId, pixels):
-    return ''
-    cur, named_cur = begin_db_request()
-    if request.method == 'GET':
-        cur.execute("select cpu_count from public.traces where id = %s",(traceId,))
-        cpus = cur.fetchone()
-        schema = "t" + str(traceId)
-        cur.execute("select min(gen_ts), max(gen_ts) from "+schema+".graph")
-        tmp = cur.fetchone()
-        start_time=tmp[0]
-        end_time=tmp[1]
-        time_slice = (end_time - start_time -1) / pixels
-        if DEBUG:
-            print "Graph Full"
-            print "Start=%d"%start_time
-            print "End=%d"%end_time
-            print "timeslice=%d"%time_slice
-            print "pixels Wanted=%d"%pixels
-        traces = {}
-        for cpu in range(cpus[0]):
-            traces[cpu], row_count = getFullAvgGraphPerCpu(schema, cpu, start_time, end_time, time_slice)
-
-        cpu_array = {}
-        for cpu in range(cpus[0]):
-            traces_array = []
-            for trace in traces[cpu]:
-                traces_array.append(traces[cpu][trace])
-            cpu_array["cpu"+str(cpu)] = traces_array
-
-        return jsonify({"start":start_time,
-                        "end":end_time,
-                        "cpus": cpus[0],
-                        "pixels":pixels,
-                        "traces": cpu_array,
-                        })
-    elif request.method == 'POST':
-        return "ECHO: POST\n"
-
-
-def getGraphAvgPerCpu(schema, cpu, start_time, end_time, time_slice):
-    cur, named_cur = begin_db_request()
-    tsc_tick = get_tsc_tick(schema)
-    cur.execute("""
-    select x, thread_id, round((ins::numeric*1000/%s)/(%s::numeric/1000000),1) from (
-    select ( ts - %s ) / %s as x,thread_id,sum as ins from (
-    select (gen_ts/%s)*%s as ts, thread_id, sum(sum), count(*) over (partition by gen_ts/%s) as ts_count
-    from """+schema+""".graph
-    where cpu = %s and gen_ts >= %s and gen_ts <= %s
-    group by gen_ts/%s, thread_id
-    order by ts
-    ) s where ts_count = 1 or sum <> 0
-    ) s1 """,(time_slice, tsc_tick, start_time, time_slice, time_slice,time_slice,time_slice,cpu,start_time, end_time, time_slice,))
-
-    if DEBUG:
-        print cur.query
-
-    results = cur.fetchall()
-    traces = {}
-    row_count = -1
-    new_row = -1
-    for row in results:
-        if not row[0] == new_row:
-            new_row = row[0]
-            row_count = row_count + 1
-        if not row[1] in traces:
-            named_cur.execute("SELECT * from "+schema+".tgid where id = %s", (row[1],))
-
-            name = named_cur.fetchone()
-            traces.update({row[1]: {"n":name.name,"id":name.id,"p":name.pid,"tgid":name.tgid,"tid":name.id,"color":name.color,"data":{} }} )
-
-        traces[row[1]]['data'].update({row[0]:row[2]})
-    return traces, row_count
-
-def getGraphPerCpu(schema, cpu, start_time, end_time, time_slice, gen_start, gen_end):
-    cur, named_cur = begin_db_request()
-    tsc_tick = get_tsc_tick(schema)
-    cur.execute("""
-        select x, thread_id, round((ins::numeric*1000/%s)/(%s::numeric/1000000),1) from (
-        select ( gen_ts - %s) / %s as x , thread_id, sum(part2)::int as ins from
-            (
-            select * ,
-            -- FINAL CALCULATION IS DONE HERE!!!!
-                CASE WHEN row_number() over(partition by id ) = 1 AND (gen_ts + %s) < (end_ts) THEN
-                -- THIS NEED Percent calcutation to figure out exec size
-                    -- ( Amount * Multiplier ) / slice
-                    --Multiplier
-                    (ins_count * (%s - ( great - gen_ts))::bigint) / (len +1)::real
-
-                ELSE
-                -- Check if we are in row 2 or so
-                    -- ( Amount * Multiplier ) / slice
-                    -- OPTION 1 or
-                    --(ins_count * CASE WHEN end_ts - great +1 >= %s THEN %s ELSE end_ts - great +1 END) / (len +1)
-                    -- OPTION 2 check witch one is faster
-                    CASE WHEN row_number() over(partition by id ) = 1 THEN
-                        ins_count::real
-                    ELSE
-                        (ins_count * CASE WHEN end_ts - great +1 >= %s THEN %s ELSE end_ts - great +1 END::bigint) / (len +1)::real
-                    END
-                END
-                as part2
-
-             from
-            (
-            select *, greatest(ts, gen_ts) as great from
-            (
-            select  end_ts - ts as len, *, generate_series(ts - (ts %% %s), end_ts, %s) as gen_ts
-            from
-            (
-            --SELECT lead(ts) over (order by id) -1 as end_ts ,*
-            --SELECT lead(ts) over () -1 as end_ts ,* FROM """+schema+""".ins
-            SELECT lead(ts) over () -1 as end_ts ,* FROM
-            (
-                ( SELECT  * FROM """+schema+""".ins where cpu = %s and ts < %s order by id DESC LIMIT 1 )
-                UNION ALL
-                ( SELECT * FROM """+schema+""".ins where cpu = %s and ts >= %s and ts <= %s order by id)
-                UNION ALL
-                ( SELECT * FROM """+schema+""".ins where cpu = %s and ts > %s order by id ASC LIMIT 2)
-            ) s1
-            ) s2
-            ) s3
-            where gen_ts >= %s and gen_ts <= %s
-            ) s4
-            ) s5
-            group by 1,2
-            order by 1
-            ) s6
-        """,(time_slice, tsc_tick, start_time, time_slice, time_slice,time_slice,time_slice,time_slice,time_slice,time_slice,time_slice,time_slice,cpu, start_time,cpu, start_time,end_time, cpu, end_time, start_time,end_time))
-
-    if DEBUG:
-        print cur.query
-
-    results = cur.fetchall()
-    traces = {}
-    row_count = -1
-    new_row = -1
-    for row in results:
-        if not row[0] == new_row:
-            new_row = row[0]
-            row_count = row_count + 1
-        if not row[1] in traces:
-            named_cur.execute("SELECT * from "+schema+".tgid where id = %s", (row[1],))
-
-            name = named_cur.fetchone()
-            traces.update({row[1]: {"n":name.name,"id":name.id,"p":name.pid,"tgid":name.tgid,"color":name.color,"data":{} }} )
-        traces[row[1]]['data'].update({row[0]:row[2]})
-
-    return traces, row_count
-
-@app.route('/api/1/graph/<int:traceId>/<int:pixels>/<int:start>/<int:end>', methods=['GET', 'POST'])
-def graph(traceId, pixels, start, end):
-    cur, named_cur = begin_db_request()
-    if request.method == 'GET':
-        cur.execute("select cpu_count from public.traces where id = %s",(traceId,))
-        cpus = cur.fetchone()
-
-        schema = "t" + str(traceId)
-
-        start_time=start
-        end_time=end
-        time_slice = (end_time - start_time)
-        if (time_slice <= pixels):
-            new_pixels = 2 * pixels - time_slice
-            start_time = start_time - new_pixels / 2
-            end_time   = end_time + new_pixels / 2 + 1
-            time_slice = 2
-        else:
-            time_slice = time_slice / pixels
-
-        gen_start = start_time
-        gen_end = start_time + ( pixels * time_slice )
-        gen_timeslice = (gen_end-gen_start)/pixels
-
-        traces = {}
-
-        if DEBUG:
-            print "start_time             =",(start,)
-            print "end_time               =",(end,)
-            print "pixels                 =",(pixels,)
-            print "time in 1 pixel        =",((end_time - start_time)/pixels,)
-            print "(end_time - start_time)=",(end_time - start_time,)
-            print "gen_start              =",(gen_start,)
-            print "gen_end                =",(gen_end,)
-            print "gentime in 1 pixel     =",((gen_end-gen_start)/pixels,)
-            print "new pixels             =",((gen_end-gen_start)/((gen_end-gen_start)/pixels),)
-
-        # Timeslice bigger than 10ms go for AVG view
-        if ( end_time - start_time ) / 1596 > 10000:
-            if DEBUG:
-                print "*** AVG view"
-                print "start_time             =",(start_time,)
-                print "end_time               =",(end_time,)
-            for cpu in range(cpus[0]):
-                traces[cpu], row_count = getGraphAvgPerCpu(schema, cpu, gen_start, gen_end, gen_timeslice)
-        else:
-            for cpu in range(cpus[0]):
-                traces[cpu], row_count = getGraphPerCpu(schema, cpu, start_time, end_time, time_slice, gen_start, gen_end)
-
-        if DEBUG:
-            print "Graph - Zoom"
-            print "Data between=%d"%(end_time - start_time)
-            print "Start=%d"%start_time
-            print "End=%d"%end_time
-            print "timeslice=%d"%time_slice
-            print "pixels Wanted=%d"%pixels
-            if time_slice <= 0:
-                return jsonify({"status":False})
-
-        cpu_array = {}
-        for cpu in range(cpus[0]):
-            traces_array = []
-            for trace in traces[cpu]:
-                traces_array.append(traces[cpu][trace])
-            cpu_array["cpu"+str(cpu)] = traces_array
-
-        return jsonify({"start":gen_start,
-                        "end":gen_end,
-                        "cpus": cpus[0],
-                        "pixels":pixels,
-                        "traces": cpu_array})
-    elif request.method == 'POST':
-        return "ECHO: POST\n"
 #
 #  SEARCH
 #
@@ -1343,25 +926,6 @@ def search_full_lost(traceId,pixels,start_time,end_time):
 
     if DEBUG:
         print named_cur.query
-    rows = named_cur.fetchall()
-
-    r = [dict((named_cur.description[i][0], value) \
-           for i, value in enumerate(row)) for row in rows]
-    return jsonify({"data":r})
-
-################################################################
-#
-# cbr / Core Bus Ratio query
-#
-################################################################
-@app.route('/api/1/cbr/<int:traceId>/<int:start_time>/<int:end_time>', methods=['GET', 'POST'])
-def cbr(traceId,start_time,end_time):
-    cur, named_cur = begin_db_request()
-    schema = "t" + str(traceId)
-    if end_time == 0:
-        named_cur.execute("""select * from """+schema+""".cbr""")
-    else:
-        named_cur.execute("""select * from """+schema+""".cbr where ts >= %s and ts <= %s""",(start_time,end_time,))
     rows = named_cur.fetchall()
 
     r = [dict((named_cur.description[i][0], value) \
