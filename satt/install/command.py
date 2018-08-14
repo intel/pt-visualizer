@@ -171,6 +171,17 @@ class SattInstall:
                         else:
                             print ("DB Ok")
 
+                        ret = os.system('''sudo -u postgres psql -q --command "CREATE TABLE IF NOT EXISTS public.traces (
+                                        id serial, name varchar(256), description varchar(2048),
+                                        created date, device varchar(2048), cpu_count int4, length int DEFAULT 0,
+                                        build varchar(2048) DEFAULT \'\', contact varchar(2048) DEFAULT \'\',
+                                        screenshot boolean DEFAULT \'false\',
+                                        status smallint default 0, info varchar(2048) DEFAULT \'\', PRIMARY KEY(id))"''')
+                        if (ret >> 8) != 0:
+                            print ("Error creating public.traces table")
+                        else:
+                            print ("DB Ok")
+
                         # Find pg_hba.conf filepath
                         hba_file = os.popen('''sudo -u postgres psql -q -P format=unaligned --command "SHOW hba_file;"''').read()
                         hba_file = hba_file.split('\n')[1]
