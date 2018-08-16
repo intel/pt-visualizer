@@ -1,15 +1,15 @@
-From 9b33753ea863f0eb48c60f44aed438089bc9d5c2 Mon Sep 17 00:00:00 2001
+From 3610c4152dfbd37b606f13537402e176d88aa9d1 Mon Sep 17 00:00:00 2001
 From: Florin Papa <florin.papa@intel.com>
 Date: Thu, 9 Aug 2018 11:51:13 -0700
 Subject: [PATCH] Implement DB structure for heatmap tool
 
 ---
- tools/perf/scripts/python/export-to-postgresql.py  | 501 ++++++---------------
+ tools/perf/scripts/python/export-to-postgresql.py  | 500 ++++++---------------
  .../util/scripting-engines/trace-event-python.c    |  15 +-
- 2 files changed, 155 insertions(+), 361 deletions(-)
+ 2 files changed, 155 insertions(+), 360 deletions(-)
 
 diff --git a/tools/perf/scripts/python/export-to-postgresql.py b/tools/perf/scripts/python/export-to-postgresql.py
-index efcaf6c..b83c4fc 100644
+index efcaf6c..38552e7 100644
 --- a/tools/perf/scripts/python/export-to-postgresql.py
 +++ b/tools/perf/scripts/python/export-to-postgresql.py
 @@ -14,6 +14,8 @@ import os
@@ -21,9 +21,11 @@ index efcaf6c..b83c4fc 100644
  
  # To use this script you will need to have installed package python-pyside which
  # provides LGPL-licensed Python bindings for Qt.  You will also need the package
-@@ -227,272 +229,100 @@ perf_db_export_callchains = False
+@@ -225,274 +227,101 @@ perf_db_export_mode = True
+ perf_db_export_calls = False
+ perf_db_export_callchains = False
  
- 
+-
  def usage():
 -	print >> sys.stderr, "Usage is: export-to-postgresql.py <database name> [<columns>] [<calls>] [<callchains>]"
 -	print >> sys.stderr, "where:	columns		'all' or 'branches'"
@@ -32,8 +34,7 @@ index efcaf6c..b83c4fc 100644
 +	print >> sys.stderr, "Usage is: export-to-postgresql.py <database name>"
  	raise Exception("Too few arguments")
  
--if (len(sys.argv) < 2):
-+if (len(sys.argv) < 1):
+ if (len(sys.argv) < 2):
  	usage()
  
 -dbname = sys.argv[1]
@@ -156,7 +157,7 @@ index efcaf6c..b83c4fc 100644
 -		'dso_id		bigint,'
 +		'id			integer		NOT NULL,'
 +		'dso_id		smallint,'
-+		'name		varchar(256),'
++		'name		varchar(10000),'
  		'sym_start	bigint,'
 -		'sym_end	bigint,'
 -		'binding	integer,'
@@ -361,7 +362,7 @@ index efcaf6c..b83c4fc 100644
  
  
  file_header = struct.pack("!11sii", "PGCOPY\n\377\r\n\0", 0, 0)
-@@ -515,9 +345,13 @@ def copy_output_file_direct(file, table_name):
+@@ -515,9 +344,13 @@ def copy_output_file_direct(file, table_name):
  
  # Use COPY FROM STDIN because security may prevent postgres from accessing the files directly
  def copy_output_file(file, table_name):
@@ -376,7 +377,7 @@ index efcaf6c..b83c4fc 100644
  	file.write(file_trailer)
  	file.seek(0)
  	sql = "COPY " + table_name + " FROM STDIN (FORMAT 'binary')"
-@@ -540,114 +374,55 @@ def remove_output_file(file):
+@@ -540,114 +373,54 @@ def remove_output_file(file):
  	file.close()
  	os.unlink(name)
  
@@ -410,8 +411,7 @@ index efcaf6c..b83c4fc 100644
 -	sample_table(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 -	if perf_db_export_calls or perf_db_export_callchains:
 -		call_path_table(0, 0, 0, 0)
--
-+	
+ 
  unhandled_count = 0
  
  def trace_end():
@@ -435,7 +435,6 @@ index efcaf6c..b83c4fc 100644
 -	if perf_db_export_calls:
 -		copy_output_file(call_file,		"calls")
 +	copy_output_file(thread_file,		"threads")
-+
  
  	print datetime.datetime.today(), "Removing intermediate files..."
 -	remove_output_file(evsel_file)
@@ -511,7 +510,7 @@ index efcaf6c..b83c4fc 100644
  
  	if (unhandled_count):
  		print datetime.datetime.today(), "Warning: ", unhandled_count, " unhandled events"
-@@ -661,65 +436,75 @@ def sched__sched_switch(*x):
+@@ -661,65 +434,78 @@ def sched__sched_switch(*x):
  	pass
  
  def evsel_table(evsel_id, evsel_name, *x):
@@ -558,6 +557,9 @@ index efcaf6c..b83c4fc 100644
  	dso_file.write(value)
  
  def symbol_table(symbol_id, dso_id, sym_start, sym_end, binding, symbol_name, *x):
++	global max_sym_id
++	global max_sym_len
++	global max_dso_id
  	n = len(symbol_name)
 -	fmt = "!hiqiqiqiqiii" + str(n) + "s"
 -	value = struct.pack(fmt, 6, 8, symbol_id, 8, dso_id, 8, sym_start, 8, sym_end, 4, binding, n, symbol_name)
