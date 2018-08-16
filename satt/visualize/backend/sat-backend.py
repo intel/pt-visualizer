@@ -936,61 +936,111 @@ def search_full_lost(traceId,pixels,start_time,end_time):
 #
 # Memory Heatmap Full Dataset
 #
-@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>', methods=['GET'])
+def alignValueTo(val, to):
+    if val == 0:
+        return to
+    md = val % to
+    return int(val if md == 0 else val + (to - md))
+
+@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>',
+           methods=['GET'])
 def memheatmap_full(traceId, plot_w, plot_h):
+    ranges_max_dist = 16 * 1024 * 1024
+    log_scale = True
     cur, named_cur = begin_db_request()
     schema = "pt" + str(traceId)
-    cur.execute("""select ip, length(opcode), exec_count from """+schema+""".instructions""")
+    cur.execute("""select ip, length(opcode), exec_count from """
+                +schema+""".instructions""")
     rows = cur.fetchall()
     rows.sort(key=itemgetter(0))
-    address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0]]
+    """ [start address, end address, length <- bytes,
+                                     length <- units, result array <- units] """
+    address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0, None]]
     for row in rows:
-        if row[0] - address_ranges[-1][1] > 65535:
-            address_ranges.append([row[0], row[0] + row[1], 0, 0])
+        start_address = row[0]
+        end_address = start_address + row[1] - 1
+        if row[0] - address_ranges[-1][1] > ranges_max_dist:
+            address_ranges.append([row[0], end_address, 0, 0, None])
         else:
-            address_ranges[-1][1] = row[0] + row[1]
+            address_ranges[-1][1] = end_address
     total_cells = 0
     for idx in range(0, len(address_ranges)):
         address_ranges[idx][2] = address_ranges[idx][1] - \
                                  address_ranges[idx][0] + 1
         total_cells += address_ranges[idx][2]
 
-    available_cells = plot_w * plot_h
-    mapping = math.ceil(1.0 * total_cells / available_cells)
+    ranges_count = len(address_ranges)
+    available_lines = plot_h - (ranges_count - 1)
+    available_cells = plot_w * available_lines
+    mapping = max(1, math.ceil(1.0 * total_cells / available_cells))
 
-    crt_total = 0
-    for idx in range(0, len(address_ranges)):
-        if idx == 0:
-            address_ranges[idx][3] = 0
-        else:
-            address_ranges[idx][3] = crt_total // mapping
-        crt_total += address_ranges[idx][2]
+    # Make sure that our mapping won't result in more data than we can display
+    total_lines = 0
+    for addr_range in address_ranges:
+        total_lines += alignValueTo(addr_range[2] // mapping, plot_w)
+    if total_lines > available_lines:
+        mapping += 1
 
-    linear_result = [0] * available_cells
+    # Calculate mapped length
+    for addr_range in address_ranges:
+        addr_range[3] = alignValueTo(addr_range[2] // mapping, plot_w)
+
     current_range = 0
+    current_result = [0] * address_ranges[current_range][3]
     for row in rows:
         if row[0] > address_ranges[current_range][1]:
+            address_ranges[current_range][4] = current_result
             current_range += 1
-        start_address = address_ranges[current_range][3] + \
-                        (row[0] - address_ranges[current_range][0]) // mapping
+            current_result = [0] * address_ranges[current_range][3]
+        start_address = (row[0] - address_ranges[current_range][0]) // mapping
         start = int(start_address)
-        end = start + int(row[1] // mapping) + 1
-        for idx in range(start, end):
-            linear_result[idx] += 1
+        end = start + int(row[1] // mapping)
+        for idx in range(start, end + 1):
+            current_result[idx] += row[2]
+    address_ranges[-1][4] = current_result
+
+    # Delete ranges with a mapped length of less than 1 px
+    for idx in range(len(address_ranges) - 1, -1, -1):
+        if address_ranges[idx][2] // mapping < 1:
+            del address_ranges[idx]
+
+    m = 1
+    if log_scale:
+        for addr_range in address_ranges:
+            for idx in range(0, len(addr_range[4])):
+                if addr_range[4][idx] > 0:
+                    addr_range[4][idx] = math.log(addr_range[4][idx], 2)
+                    if addr_range[4][idx] > m:
+                        m = addr_range[4][idx]
+    else:
+        m = max([max(x[4]) for x in address_ranges])
 
     # Normalize result
-    m = max(linear_result)
-    for idx in range(0, available_cells):
-        if linear_result[idx] > 0:
-            linear_result[idx] = int(math.floor(
-                                     2047.0 * linear_result[idx] / m))
-
+    for addr_range in address_ranges:
+        for idx in range(0, len(addr_range[4])):
+            if addr_range[4][idx] > 0:
+                addr_range[4][idx] = int(math.floor(
+                                         2047.0 * addr_range[4][idx] / m))
     # Create result data
-    result = {}
-    for idx in range(0, available_cells):
-        if linear_result[idx] != 0:
-            result[idx] = linear_result[idx]
-    return jsonify({"data":result})
+    result_ranges = []
+    for addr_range in address_ranges:
+        data = {}
+        for idx in range(len(addr_range[4])):
+            if addr_range[4][idx] != 0:
+                data[idx] = addr_range[4][idx]
+        if len(data) == 0:
+            continue
+        dataLength = alignValueTo(addr_range[2] // mapping, plot_w)
+        plotByteLength = dataLength * mapping
+        result_ranges.append({
+                    "startAddress": addr_range[0],
+                    "endAddress": addr_range[1],
+                    "bytesLength": addr_range[2],
+                    "dataLength": dataLength,
+                    "plotByteLength": plotByteLength,
+                    "data": data
+                })
+    return jsonify({"ranges":result_ranges})
 
 
 if __name__ == '__main__':
