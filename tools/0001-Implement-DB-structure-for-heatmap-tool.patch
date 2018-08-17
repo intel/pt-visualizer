@@ -1,15 +1,15 @@
-From 3610c4152dfbd37b606f13537402e176d88aa9d1 Mon Sep 17 00:00:00 2001
+From d85303aea61fe12fb815f687311cd7cd1def0f08 Mon Sep 17 00:00:00 2001
 From: Florin Papa <florin.papa@intel.com>
 Date: Thu, 9 Aug 2018 11:51:13 -0700
 Subject: [PATCH] Implement DB structure for heatmap tool
 
 ---
- tools/perf/scripts/python/export-to-postgresql.py  | 500 ++++++---------------
+ tools/perf/scripts/python/export-to-postgresql.py  | 505 ++++++---------------
  .../util/scripting-engines/trace-event-python.c    |  15 +-
- 2 files changed, 155 insertions(+), 360 deletions(-)
+ 2 files changed, 160 insertions(+), 360 deletions(-)
 
 diff --git a/tools/perf/scripts/python/export-to-postgresql.py b/tools/perf/scripts/python/export-to-postgresql.py
-index efcaf6c..38552e7 100644
+index efcaf6c..c6ef58a 100644
 --- a/tools/perf/scripts/python/export-to-postgresql.py
 +++ b/tools/perf/scripts/python/export-to-postgresql.py
 @@ -14,6 +14,8 @@ import os
@@ -157,7 +157,7 @@ index efcaf6c..38552e7 100644
 -		'dso_id		bigint,'
 +		'id			integer		NOT NULL,'
 +		'dso_id		smallint,'
-+		'name		varchar(10000),'
++		'name		varchar(256),'
  		'sym_start	bigint,'
 -		'sym_end	bigint,'
 -		'binding	integer,'
@@ -510,7 +510,7 @@ index efcaf6c..38552e7 100644
  
  	if (unhandled_count):
  		print datetime.datetime.today(), "Warning: ", unhandled_count, " unhandled events"
-@@ -661,65 +434,78 @@ def sched__sched_switch(*x):
+@@ -661,65 +434,83 @@ def sched__sched_switch(*x):
  	pass
  
  def evsel_table(evsel_id, evsel_name, *x):
@@ -552,17 +552,22 @@ index efcaf6c..38552e7 100644
 -	fmt = "!hiqiqi" + str(n1) + "si"  + str(n2) + "si" + str(n3) + "s"
 -	value = struct.pack(fmt, 5, 8, dso_id, 8, machine_id, n1, short_name, n2, long_name, n3, build_id)
 +	n = len(short_name)
++	if n > 255:
++		n = 255
++		short_name = short_name[:255]
++		print datetime.datetime.today(), "Warning: DSO name longer than max allowed by DB. Truncating"
 +	fmt = "!hihi" + str(n) + "s"
 +	value = struct.pack(fmt, 2, 2, dso_id, n, short_name)
  	dso_file.write(value)
  
  def symbol_table(symbol_id, dso_id, sym_start, sym_end, binding, symbol_name, *x):
-+	global max_sym_id
-+	global max_sym_len
-+	global max_dso_id
  	n = len(symbol_name)
 -	fmt = "!hiqiqiqiqiii" + str(n) + "s"
 -	value = struct.pack(fmt, 6, 8, symbol_id, 8, dso_id, 8, sym_start, 8, sym_end, 4, binding, n, symbol_name)
++	if n > 255:
++		n = 255
++		symbol_name = symbol_name[:255]
++		print datetime.datetime.today(), "Warning: Symbol name longer than max allowed by DB. Truncating"
 +	fmt = "!hiiihi" + str(n) + "s" + "iqiq"
 +	value = struct.pack(fmt, 5, 4, symbol_id, 2, dso_id, n, symbol_name, 8, sym_start, 8, sym_end)
  	symbol_file.write(value)
