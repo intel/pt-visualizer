@@ -953,14 +953,18 @@ def memheatmap_full(traceId, plot_w, plot_h):
                 +schema+""".instructions""")
     rows = cur.fetchall()
     rows.sort(key=itemgetter(0))
-    """ [start address, end address, length <- bytes,
-                                     length <- units, result array <- units] """
-    address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0, None]]
+    """ [start address,
+         end address,
+         length <- bytes,
+         length <- units,
+         result array <- absolute
+         result array <- normalized] """
+    address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0, None, None]]
     for row in rows:
         start_address = row[0]
         end_address = start_address + row[1] - 1
         if row[0] - address_ranges[-1][1] > ranges_max_dist:
-            address_ranges.append([row[0], end_address, 0, 0, None])
+            address_ranges.append([row[0], end_address, 0, 0, None, None])
         else:
             address_ranges[-1][1] = end_address
     total_cells = 0
@@ -1007,27 +1011,28 @@ def memheatmap_full(traceId, plot_w, plot_h):
     m = 1
     if log_scale:
         for addr_range in address_ranges:
+            addr_range[5] = addr_range[4][:]
             for idx in range(0, len(addr_range[4])):
                 if addr_range[4][idx] > 0:
-                    addr_range[4][idx] = math.log(addr_range[4][idx], 2)
-                    if addr_range[4][idx] > m:
-                        m = addr_range[4][idx]
+                    addr_range[5][idx] = math.log(addr_range[5][idx], 2)
+                    if addr_range[5][idx] > m:
+                        m = addr_range[5][idx]
     else:
-        m = max([max(x[4]) for x in address_ranges])
+        m = max([max(x[5]) for x in address_ranges])
 
     # Normalize result
     for addr_range in address_ranges:
         for idx in range(0, len(addr_range[4])):
-            if addr_range[4][idx] > 0:
-                addr_range[4][idx] = int(math.floor(
-                                         2047.0 * addr_range[4][idx] / m))
+            if addr_range[5][idx] > 0:
+                addr_range[5][idx] = int(math.floor(
+                                         2047.0 * addr_range[5][idx] / m))
     # Create result data
     result_ranges = []
     for addr_range in address_ranges:
         data = {}
         for idx in range(len(addr_range[4])):
             if addr_range[4][idx] != 0:
-                data[idx] = addr_range[4][idx]
+                data[idx] = [addr_range[5][idx], addr_range[4][idx]]
         if len(data) == 0:
             continue
         dataLength = alignValueTo(addr_range[2] // mapping, plot_w)
@@ -1038,6 +1043,7 @@ def memheatmap_full(traceId, plot_w, plot_h):
                     "bytesLength": addr_range[2],
                     "dataLength": dataLength,
                     "plotByteLength": plotByteLength,
+                    "bytesPerPoint": mapping,
                     "data": data
                 })
     return jsonify({"ranges":result_ranges})

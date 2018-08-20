@@ -47,12 +47,24 @@
 
         var formatByteSize = function(value) {
           if (value < 1024) {
-            return value + "B";
+            return value + 'B';
           }
-          if(value < 1024 * 1024) {
-            return (value >> 10) + "KB";
+          if (value < 1024 * 1024) {
+            return (value >> 10) + 'KB';
           }
-          return (value >> 20) + "MB";
+          return (value >> 20) + 'MB';
+        };
+
+        var formatPercent = function(value, decimals) {
+          var toAppend = '';
+          if (value > 0) {
+            toAppend = '+';
+          }
+          if (Math.abs(value) <= 2.0) {
+            return toAppend + (value * 100.0).toFixed(decimals) + '%';
+          } else {
+            return (value - 1.0).toFixed(decimals) + 'x';
+          }
         }
 
         var intToRGBAArray = function(colorInt, alpha) {
@@ -112,18 +124,18 @@
           if (remaining > 0) {
             var appendOne = '';
             var toAppend = chr;
-            if ((remaining & 1) == 1) {
+            if ((remaining & 1) === 1) {
               appendOne = chr;
               remaining -= 1;
             }
             while(remaining > 1) {
               toAppend = toAppend + toAppend;
-              remaining >>>= 1;
+              remaining >>= 1;
             }
             return appendOne + toAppend + str;
           }
           return str;
-        }
+        };
 
         var Blaze = function(canvasObj, infoObj) {
           this.drawingSurface = canvasObj;
@@ -163,6 +175,84 @@
             }
           };
 
+          this.infoWindow = {
+            x: 0,
+            y: 0,
+            width: 150,
+            height: 170,
+            infoBarH: 20,
+            rows: 5,
+            cols: 5,
+            active: false,
+            parent: this,
+            data: null,
+            spacing: 10,
+            cellFontSize: 10,
+            borderColor: '#536666',
+            selectedColor: '#FF5964'
+          };
+
+          this.infoWindow.update = function(x, y, data) {
+              this.x = x + this.spacing;
+              if ((this.x + this.width) >= this.parent.width) {
+                this.x = x - this.width - this.spacing - 1;
+              }
+              this.y = y - this.height - this.spacing;
+              if (this.y < 0) {
+                this.y = y + this.spacing;
+              }
+              this.data = data;
+          };
+
+          this.infoWindow.draw = function(ctx) {
+            if (!this.active || this.data === null) {
+              return;
+            }
+            ctx.fillStyle = this.parent.config.gridColor;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            var cellW = this.width / this.cols;
+            var cellH = (this.height - this.infoBarH) / this.rows;
+            var crtX = this.x;
+            var crtY = this.y;
+            var currentR = (this.rows - 1) >> 1;
+            var currentC = (this.cols - 1) >> 1;
+            var crtCell = 0;
+            for (var row = 0; row < this.rows; ++row) {
+              for (var col = 0; col < this.cols; ++col, ++crtCell) {
+                if (this.data.colorValues[crtCell] !== -1) {
+                  ctx.fillStyle = this.parent.getRGBStringFromGradient(
+                                                this.data.colorValues[crtCell]);
+                  ctx.fillRect(crtX, crtY, cellW, cellH);
+                  if (this.data.deltaValues != null &&
+                      this.data.deltaValues[crtCell] !== NaN &&
+                      this.data.colorValues[crtCell] !== 0 &&
+                      (row != currentR || col != currentC)) {
+                    ctx.fillStyle = "#000000";
+                    ctx.textAlign = "center";
+                    ctx.font = this.cellFontSize + "px monospace";
+                    ctx.fillText(formatPercent(this.data.deltaValues[crtCell]),
+                                 crtX + (cellW >> 1),
+                                 crtY + ((cellH - this.cellFontSize) >> 1));
+                  }
+                }
+                crtX += cellW;
+              }
+              crtX = this.x;
+              crtY += cellH;
+            }
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = this.borderColor;
+            ctx.beginPath();
+            ctx.rect(this.x, this.y, this.width, this.height);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.strokeStyle = this.selectedColor;
+            ctx.rect(this.x + cellW * ((this.cols - 1) >> 1),
+                     this.y + cellH * ((this.rows - 1) >> 1),
+                     cellW, cellH);
+            ctx.stroke();
+          };
+
           this.highlightRect = {
             x: 0,
             y: 0,
@@ -188,7 +278,7 @@
             }
           };
 
-          this.overlays = [this.highlightRect, this.cross];
+          this.overlays = [this.highlightRect, this.cross, this.infoWindow];
 
           this.backBuffer = createCanvas(this.width, this.height);
           this.colorGradient = createColorGradient(this.config.heatmapColors,
@@ -221,13 +311,13 @@
           };
 
           this.onRangeHighlight = function(range) {
-            if (this.highlightRange == range) {
+            if (this.highlightRange === range) {
               return;
             }
             this.highlightRange = range;
-            if (range == null) {
+            if (range === null) {
               this.highlightRect.active = false;
-              this.infoObject.innerHTML = "";
+              this.infoObject.innerHTML = '';
             } else {
               this.highlightRect.active = true;
               this.highlightRect.update(0,
@@ -242,6 +332,77 @@
             this.onRangeHighlight(this.getRangeAtPos(y));
           };
 
+          this.retrievePointsAround = function(x, y, w, h, range) {
+            y = Math.floor(range.bounds.h - (y - range.bounds.y) - 1);
+            var startX = x - ((w - 1) >> 1);
+            var endX = startX + w;
+            var startY = y + ((h - 1) >> 1);
+            var endY = startY - h;
+            var arr = [];
+            var deltaValues = [];
+            var hitCount = -1;
+            var foundOne = false;
+            for (var crtY = startY; crtY > endY; --crtY) {
+              var overIndexStart = crtY * this.width;
+              for (var crtX = startX; crtX < endX; ++crtX) {
+                var crtVal = -1;
+                var absVal = NaN;
+                if (crtX >= 0 &&
+                    crtY >= 0 &&
+                    crtY < range.bounds.h &&
+                    crtX < this.width) {
+                  var overIndex = overIndexStart + crtX;
+                  if (overIndex in range.data) {
+                    crtVal = range.data[overIndex][0];
+                    absVal = range.data[overIndex][1];
+                    foundOne = true;
+                  } else {
+                    crtVal = 0;
+                    absVal = 0;
+                  }
+                }
+                if (crtX == x && crtY == y) {
+                  hitCount = absVal;
+                }
+                arr.push(crtVal);
+                deltaValues.push(absVal);
+              }
+            }
+            if (foundOne === false) {
+              return null;
+            }
+            if (hitCount !== NaN && hitCount != 0) {
+              for (var idx in deltaValues) {
+                if (deltaValues[idx] != NaN) {
+                  deltaValues[idx] = (deltaValues[idx] - hitCount) / hitCount;
+                }
+              }
+            } else {
+              deltaValues = null;
+            }
+            var startAddress = range.startAddress +
+                                (y * this.width + x) * this.data.mapping;
+            var endAddress = startAddress + this.data.mapping;
+            return {
+              colorValues: arr,
+              deltaValues: deltaValues,
+              hitCount: hitCount,
+              startAddress: startAddress,
+              endAddress: endAddress
+            }
+          };
+
+          this.updateDataPointHighlight = function(x, y, range) {
+            if (range === null) {
+              this.infoWindow.active = false;
+            } else {
+              this.infoWindow.active = true;
+              this.infoWindow.update(x, y,
+                this.retrievePointsAround(x, y, this.infoWindow.cols,
+                                          this.infoWindow.rows, range));
+            }
+          };
+
           this.drawOverlays = function(ctx) {
             for (var idx in this.overlays) {
               this.overlays[idx].draw(ctx);
@@ -266,9 +427,13 @@
             this.drawOverlays(drawCtx);
           };
 
-          this.onMouseMove = function(x, y) {
+          this.onMouseMove = function(x, y, shiftKey) {
+            if (shiftKey) {
+              y = this.cross.y;
+            }
             this.cross.update(x, y);
             this.updateRangeHighlight(y);
+            this.updateDataPointHighlight(x, y, this.highlightRange);
             this.updateDrawingSurface();
           };
 
@@ -276,12 +441,15 @@
             this.cross.active = true;
             this.cross.update(x, y);
             this.updateRangeHighlight(y);
+            this.updateDataPointHighlight(x, y, this.highlightRange);
+
             this.updateDrawingSurface();
           };
 
           this.onMouseLeave = function(x, y) {
             this.cross.active = false;
             this.onRangeHighlight(null);
+            this.updateDataPointHighlight(x, y, null);
             this.updateDrawingSurface();
           };
 
@@ -300,6 +468,13 @@
               imageData[offset + channel] =
                 this.colorGradient[gradientOffset + channel];
             }
+          };
+
+          this.getRGBStringFromGradient = function(val) {
+            var gradientOffset = (val << 2);
+            return 'rgb(' +  this.colorGradient[gradientOffset] + ', ' +
+                    this.colorGradient[gradientOffset + 1] + ', ' +
+                    this.colorGradient[gradientOffset + 2] + ')';
           };
 
           this.updateBackbufferFromData = function() {
@@ -329,7 +504,7 @@
                   offset -=  idx - xDispl;
                 }
                 this.putPixelFromValue(
-                  imageData, (offset << 2), range.data[idx]);
+                  imageData, (offset << 2), range.data[idx][0]);
               }
               currentOffset -= range.dataLength;
               this.putPixelFromRGBA(imageData, (currentOffset << 2),
@@ -392,7 +567,8 @@
       blazeCanvas.on('mousemove',
                     function() {
                       var coords = d3.mouse(this);
-                      blazeMap.onMouseMove(coords[0], coords[1]);
+                      blazeMap.onMouseMove(coords[0], coords[1],
+                                           d3.event.shiftKey);
                   });
       $http(
         {
