@@ -137,11 +137,31 @@
           return str;
         };
 
+        var clampValue = function(value, min, max) {
+          return (value < min) ? min : (value > max) ? max : value;
+        };
+
         var Blaze = function(canvasObj, infoObj) {
           this.drawingSurface = canvasObj;
           this.infoObject = infoObj;
           this.width = this.drawingSurface.width;
           this.height = this.drawingSurface.height;
+          this.transform = {
+              x: 0,
+              y: 0,
+              width: this.width,
+              height: this.height
+          };
+          this.scale = 1.0;
+          this.scaleInc = 0.25;
+          this.maxScale = 10.0;
+          this.minScale = 1.0;
+
+          this.dragInfo = {
+            lastX: 0,
+            lastY: 0,
+            active: false
+          };
 
           this.config = {
             heatmapColors: ['#FFFFFF', '#8299ED', '#82EDA9',
@@ -227,9 +247,9 @@
                       this.data.deltaValues[crtCell] !== NaN &&
                       this.data.colorValues[crtCell] !== 0 &&
                       (row != currentR || col != currentC)) {
-                    ctx.fillStyle = "#000000";
-                    ctx.textAlign = "center";
-                    ctx.font = this.cellFontSize + "px monospace";
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.font = this.cellFontSize + 'px monospace';
                     ctx.fillText(formatPercent(this.data.deltaValues[crtCell]),
                                  crtX + (cellW >> 1),
                                  crtY + ((cellH - this.cellFontSize) >> 1));
@@ -290,6 +310,7 @@
             if (this.data === null) {
               return null;
             }
+            y = this.toLogicalCoords(0, y)[1];
             for (var idx in this.data.ranges) {
               if (y >= this.data.ranges[idx].bounds.y &&
                   y <= this.data.ranges[idx].bounds.y +
@@ -320,10 +341,10 @@
               this.infoObject.innerHTML = '';
             } else {
               this.highlightRect.active = true;
-              this.highlightRect.update(0,
-                                        range.bounds.y,
-                                        this.width,
-                                        range.bounds.h);
+              var y = this.toPhysicalCoords(0, range.bounds.y)[1];
+              this.highlightRect.update(
+                                      0, y, this.width,
+                                      Math.floor(range.bounds.h * this.scale));
               this.infoObject.innerHTML = this.formatRangeInfo(range);
             }
           };
@@ -397,8 +418,10 @@
               this.infoWindow.active = false;
             } else {
               this.infoWindow.active = true;
+              var logical = this.toLogicalCoords(x, y);
               this.infoWindow.update(x, y,
-                this.retrievePointsAround(x, y, this.infoWindow.cols,
+                this.retrievePointsAround(logical[0], logical[1],
+                                          this.infoWindow.cols,
                                           this.infoWindow.rows, range));
             }
           };
@@ -409,12 +432,6 @@
             }
           };
 
-          this.updateDrawingSurface = function() {
-            var drawCtx = this.drawingSurface.getContext('2d');
-            drawCtx.drawImage(this.backBuffer, 0, 0);
-            this.drawOverlays(drawCtx);
-          };
-
           this.drawOverlays = function(ctx) {
             for (var idx in this.overlays) {
               this.overlays[idx].draw(ctx);
@@ -423,26 +440,51 @@
 
           this.updateDrawingSurface = function() {
             var drawCtx = this.drawingSurface.getContext('2d');
-            drawCtx.drawImage(this.backBuffer, 0, 0);
+            if (this.scale > 1.0) {
+              drawCtx.drawImage(this.backBuffer,
+                                this.transform.x, this.transform.y,
+                                this.transform.width,
+                                this.transform.height);
+            } else {
+              drawCtx.drawImage(this.backBuffer, 0, 0);
+            }
             this.drawOverlays(drawCtx);
           };
 
           this.onMouseMove = function(x, y, shiftKey) {
-            if (shiftKey) {
-              y = this.cross.y;
+            if (this.dragInfo.active) {
+               var deltaX = x - this.dragInfo.lastX;
+               var deltaY = y - this.dragInfo.lastY;
+               this.dragInfo.lastX = x;
+               this.dragInfo.lastY = y;
+               this.transform.x = clampValue(
+                                    this.transform.x + deltaX,
+                                    -(this.transform.width - this.width), 0);
+               this.transform.y = clampValue(
+                                    this.transform.y + deltaY,
+                                    -(this.transform.height - this.height), 0);
+            } else {
+              if (shiftKey) {
+                y = this.cross.y;
+              }
+              this.cross.active = true;
+              this.cross.update(x, y);
+              this.updateRangeHighlight(y);
+              this.updateDataPointHighlight(x, y, this.highlightRange);
             }
-            this.cross.update(x, y);
-            this.updateRangeHighlight(y);
-            this.updateDataPointHighlight(x, y, this.highlightRange);
             this.updateDrawingSurface();
           };
 
           this.onMouseEnter = function(x, y) {
-            this.cross.active = true;
-            this.cross.update(x, y);
-            this.updateRangeHighlight(y);
-            this.updateDataPointHighlight(x, y, this.highlightRange);
-
+            if (this.dragInfo.active) {
+              this.dragInfo.lastX = x;
+              this.dragInfo.lastY = y;
+            } else {
+              this.cross.active = true;
+              this.cross.update(x, y);
+              this.updateRangeHighlight(y);
+              this.updateDataPointHighlight(x, y, this.highlightRange);
+            }
             this.updateDrawingSurface();
           };
 
@@ -451,6 +493,54 @@
             this.onRangeHighlight(null);
             this.updateDataPointHighlight(x, y, null);
             this.updateDrawingSurface();
+          };
+
+          this.onMouseDown = function(x, y) {
+            if (this.scale > 1.0) {
+              this.dragInfo.active = true;
+              this.dragInfo.lastX = x;
+              this.dragInfo.lastY = y;
+              this.onMouseLeave(x, y);
+            }
+          }
+
+          this.onMouseUp = function(x, y) {
+            this.dragInfo.active = false;
+          }
+
+          this.toLogicalCoords = function(x, y) {
+            if (this.scale > 1.0) {
+              return [Math.floor((x - this.transform.x) / this.scale),
+                      Math.floor((y - this.transform.y) / this.scale)];
+            }
+            return [x, y];
+          };
+
+          this.toPhysicalCoords = function(x, y) {
+            if (this.scale > 1.0) {
+              return [Math.floor(this.transform.x + x * this.scale),
+                      Math.floor(this.transform.y + y * this.scale)];
+            }
+            return [x, y];
+          };
+
+          this.onZoom = function(zoomIn, x, y) {
+            var logical = this.toLogicalCoords(x, y);
+            if (zoomIn) {
+              this.scale = Math.min(this.maxScale, this.scale + this.scaleInc);
+            } else {
+              this.scale = Math.max(this.minScale, this.scale - this.scaleInc);
+            }
+            this.transform.width = this.width * this.scale;
+            this.transform.height = this.height * this.scale;
+            this.transform.x = clampValue(
+                                    x - logical[0] * this.scale,
+                                    -(this.transform.width - this.width), 0);
+            this.transform.y = clampValue(
+                                    y - logical[1] * this.scale,
+                                    -(this.transform.height - this.height), 0);
+            this.highlightRange = null;
+            this.onMouseMove(x, y);
           };
 
           this.putPixelFromRGBA = function(imageData, offset, rgba, repeat) {
@@ -549,27 +639,48 @@
 
       var blazeCanvas = d3.select(element[0]).select('.blazemap');
       var blazeInfo = d3.select(element[0]).select('.blazeinfo');
+      var blazeContainer = d3.select(element[0]).select('.blazecontainer');
       var blazeMap = new Blaze(blazeCanvas.node(), blazeInfo.node());
       blazeMap.updateData(null);
 
       blazeCanvas.on('mouseenter',
-                     function() {
-                      var coords = d3.mouse(this);
-                      blazeMap.onMouseEnter(coords[0], coords[1]);
+                      function() {
+                        var coords = d3.mouse(this);
+                        blazeMap.onMouseEnter(coords[0], coords[1]);
                     });
 
       blazeCanvas.on('mouseleave',
                       function() {
-                      var coords = d3.mouse(this);
-                      blazeMap.onMouseLeave(coords[0], coords[1]);
+                        var coords = d3.mouse(this);
+                        blazeMap.onMouseLeave(coords[0], coords[1]);
                     });
 
       blazeCanvas.on('mousemove',
-                    function() {
-                      var coords = d3.mouse(this);
-                      blazeMap.onMouseMove(coords[0], coords[1],
-                                           d3.event.shiftKey);
-                  });
+                      function() {
+                        var coords = d3.mouse(this);
+                        blazeMap.onMouseMove(coords[0], coords[1],
+                                             d3.event.shiftKey);
+                    });
+
+      blazeCanvas.on('mousedown',
+                      function() {
+                        var coords = d3.mouse(this);
+                        blazeMap.onMouseDown(coords[0], coords[1]);
+                    });
+
+      blazeCanvas.on('mouseup',
+                      function() {
+                        var coords = d3.mouse(this);
+                        blazeMap.onMouseUp(coords[0], coords[1]);
+                    });
+
+
+      blazeCanvas.on('wheel',
+                      function() {
+                        var coords = d3.mouse(this);
+                        blazeMap.onZoom(d3.event.deltaY < 0, coords[0],
+                                        coords[1]);
+                    });
       $http(
         {
           method: 'GET',
