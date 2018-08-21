@@ -45,6 +45,10 @@
           };
         };
 
+        var floatsAreEqual = function(a, b) {
+          return Math.abs(a - b) < 0.0000000001;
+        };
+
         var formatByteSize = function(value) {
           if (value < 1024) {
             return value + 'B';
@@ -65,7 +69,7 @@
           } else {
             return (value - 1.0).toFixed(decimals) + 'x';
           }
-        }
+        };
 
         var intToRGBAArray = function(colorInt, alpha) {
           var colorObj = intToRGB(colorInt);
@@ -243,10 +247,10 @@
                   ctx.fillStyle = this.parent.getRGBStringFromGradient(
                                                 this.data.colorValues[crtCell]);
                   ctx.fillRect(crtX, crtY, cellW, cellH);
-                  if (this.data.deltaValues != null &&
-                      this.data.deltaValues[crtCell] !== NaN &&
+                  if (this.data.deltaValues !== null &&
+                      !isNaN(this.data.deltaValues[crtCell]) &&
                       this.data.colorValues[crtCell] !== 0 &&
-                      (row != currentR || col != currentC)) {
+                      (row !== currentR || col !== currentC)) {
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
                     ctx.font = this.cellFontSize + 'px monospace';
@@ -382,7 +386,7 @@
                     absVal = 0;
                   }
                 }
-                if (crtX == x && crtY == y) {
+                if (crtX === x && crtY === y) {
                   hitCount = absVal;
                 }
                 arr.push(crtVal);
@@ -392,9 +396,9 @@
             if (foundOne === false) {
               return null;
             }
-            if (hitCount !== NaN && hitCount != 0) {
+            if (!isNaN(hitCount) && hitCount !== 0) {
               for (var idx in deltaValues) {
-                if (deltaValues[idx] != NaN) {
+                if (!isNaN(deltaValues[idx])) {
                   deltaValues[idx] = (deltaValues[idx] - hitCount) / hitCount;
                 }
               }
@@ -410,7 +414,7 @@
               hitCount: hitCount,
               startAddress: startAddress,
               endAddress: endAddress
-            }
+            };
           };
 
           this.updateDataPointHighlight = function(x, y, range) {
@@ -440,6 +444,10 @@
 
           this.updateDrawingSurface = function() {
             var drawCtx = this.drawingSurface.getContext('2d');
+            drawCtx.imageSmoothingEnabled = false;
+            drawCtx.mozImageSmoothingEnabled = false;
+            drawCtx.webkitImageSmoothingEnabled = false;
+            drawCtx.msImageSmoothingEnabled = false;
             if (this.scale > 1.0) {
               drawCtx.drawImage(this.backBuffer,
                                 this.transform.x, this.transform.y,
@@ -502,11 +510,11 @@
               this.dragInfo.lastY = y;
               this.onMouseLeave(x, y);
             }
-          }
+          };
 
           this.onMouseUp = function(x, y) {
             this.dragInfo.active = false;
-          }
+          };
 
           this.toLogicalCoords = function(x, y) {
             if (this.scale > 1.0) {
@@ -525,19 +533,26 @@
           };
 
           this.onZoom = function(zoomIn, x, y) {
-            var logical = this.toLogicalCoords(x, y);
+            var newScale;
             if (zoomIn) {
-              this.scale = Math.min(this.maxScale, this.scale + this.scaleInc);
+              newScale = Math.min(this.maxScale, this.scale + this.scaleInc);
             } else {
-              this.scale = Math.max(this.minScale, this.scale - this.scaleInc);
+              newScale= Math.max(this.minScale, this.scale - this.scaleInc);
             }
+            if (floatsAreEqual(newScale, this.scale)) {
+              return;
+            }
+            var logical = this.toLogicalCoords(x, y);
+            this.scale = newScale;
             this.transform.width = this.width * this.scale;
             this.transform.height = this.height * this.scale;
             this.transform.x = clampValue(
-                                    x - logical[0] * this.scale,
+                                    x - logical[0] * this.scale -
+                                    this.scale / 2,
                                     -(this.transform.width - this.width), 0);
             this.transform.y = clampValue(
-                                    y - logical[1] * this.scale,
+                                    y - logical[1] * this.scale -
+                                    this.scale / 2,
                                     -(this.transform.height - this.height), 0);
             this.highlightRange = null;
             this.onMouseMove(x, y);
@@ -639,7 +654,6 @@
 
       var blazeCanvas = d3.select(element[0]).select('.blazemap');
       var blazeInfo = d3.select(element[0]).select('.blazeinfo');
-      var blazeContainer = d3.select(element[0]).select('.blazecontainer');
       var blazeMap = new Blaze(blazeCanvas.node(), blazeInfo.node());
       blazeMap.updateData(null);
 
@@ -665,6 +679,11 @@
       blazeCanvas.on('mousedown',
                       function() {
                         var coords = d3.mouse(this);
+                        if (d3.event.target.setPointerCapture) {
+                          d3.event.target.setPointerCapture(1);
+                        } else if (d3.event.target.setCapture) {
+                          d3.event.target.setCapture();
+                        }
                         blazeMap.onMouseDown(coords[0], coords[1]);
                     });
 
@@ -673,7 +692,6 @@
                         var coords = d3.mouse(this);
                         blazeMap.onMouseUp(coords[0], coords[1]);
                     });
-
 
       blazeCanvas.on('wheel',
                       function() {
