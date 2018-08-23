@@ -332,7 +332,8 @@
                             range.startAddress.toString(16), '0', 16) + ' - ' +
                    '0x' + padStringStart(
                             range.endAddress.toString(16), '0', 16) +
-                   ' Length: ' + formatByteSize(range.bytesLength);
+                   ' Length: ' + formatByteSize(range.bytesLength) +
+                   ' DSO: ' + range.dso;
           };
 
           this.onRangeHighlight = function(range) {

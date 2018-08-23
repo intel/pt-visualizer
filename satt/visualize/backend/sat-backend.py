@@ -945,26 +945,28 @@ def alignValueTo(val, to):
 @app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>',
            methods=['GET'])
 def memheatmap_full(traceId, plot_w, plot_h):
-    ranges_max_dist = 16 * 1024 * 1024
     log_scale = True
     cur, named_cur = begin_db_request()
     schema = "pt" + str(traceId)
-    cur.execute("""select ip, length(opcode), exec_count from """
-                +schema+""".instructions""")
+    cur.execute("select ip, length(opcode), exec_count, dso_name from " +
+                schema + ".instructions_view")
     rows = cur.fetchall()
     rows.sort(key=itemgetter(0))
-    """ [start address,
-         end address,
-         length <- bytes,
-         length <- units,
-         result array <- absolute
-         result array <- normalized] """
-    address_ranges = [[rows[0][0], rows[0][0] + rows[0][1], 0, 0, None, None]]
+    address_ranges = [[rows[0][0],               # start address
+                       rows[0][0] + rows[0][1],  # end address
+                       0,                        # length <- bytes
+                       0,                        # length <- units
+                       None,                     # result array <- absolute
+                       None,                     # result array <- normalized
+                       rows[0][3]]               # DSO name
+                      ]
     for row in rows:
         start_address = row[0]
         end_address = start_address + row[1] - 1
-        if row[0] - address_ranges[-1][1] > ranges_max_dist:
-            address_ranges.append([row[0], end_address, 0, 0, None, None])
+        current_dso = row[3]
+        if address_ranges[-1][6] != current_dso:
+            address_ranges.append([row[0], end_address, 0, 0,
+                                  None, None, current_dso])
         else:
             address_ranges[-1][1] = end_address
     total_cells = 0
@@ -981,7 +983,7 @@ def memheatmap_full(traceId, plot_w, plot_h):
     # Make sure that our mapping won't result in more data than we can display
     total_lines = 0
     for addr_range in address_ranges:
-        total_lines += alignValueTo(addr_range[2] // mapping, plot_w)
+        total_lines += alignValueTo(addr_range[2] // mapping, plot_w)/plot_w
     if total_lines > available_lines:
         mapping += 1
 
@@ -1021,6 +1023,8 @@ def memheatmap_full(traceId, plot_w, plot_h):
         m = max([max(x[5]) for x in address_ranges])
 
     # Normalize result
+    # TODO: when displaying one range only, we should be probably normalize to
+    # max of that range (not global max)
     for addr_range in address_ranges:
         for idx in range(0, len(addr_range[4])):
             if addr_range[5][idx] > 0:
@@ -1041,10 +1045,11 @@ def memheatmap_full(traceId, plot_w, plot_h):
                     "startAddress": addr_range[0],
                     "endAddress": addr_range[1],
                     "bytesLength": addr_range[2],
-                    "dataLength": dataLength,
+                    "dataLength": addr_range[3],
                     "plotByteLength": plotByteLength,
                     "bytesPerPoint": mapping,
-                    "data": data
+                    "data": data,
+                    "dso": addr_range[6]
                 })
     return jsonify({"ranges":result_ranges})
 
