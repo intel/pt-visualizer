@@ -171,7 +171,7 @@ class SattInstall:
                         else:
                             print ("DB Ok")
 
-                        ret = os.system('''sudo -u postgres psql -q --command "CREATE TABLE IF NOT EXISTS public.traces (
+                        ret = os.system('''sudo -u postgres psql -U sat -q --command "CREATE TABLE IF NOT EXISTS public.traces (
                                         id serial, name varchar(256), description varchar(2048),
                                         created date, device varchar(2048), cpu_count int4, length int DEFAULT 0,
                                         build varchar(2048) DEFAULT \'\', contact varchar(2048) DEFAULT \'\',
