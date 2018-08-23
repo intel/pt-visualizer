@@ -327,6 +327,17 @@ do_query(query, 'CREATE VIEW samples_view AS '
 	' LEFT JOIN instructions '
 		'ON instructions.id = samples.instruction_id')
 
+do_query(query, 'CREATE VIEW instructions_view AS '
+	'SELECT '
+		'instructions.id,'
+		'(SELECT name FROM symbols WHERE symbols.id = symbol_id) AS symbol_name,'
+		'(SELECT name FROM dsos WHERE dsos.id = '
+		'(SELECT dso_id FROM symbols WHERE symbols.id = symbol_id)) AS dso_name,'
+		'instructions.ip,'
+		'instructions.exec_count,'
+		'instructions.opcode'
+		' FROM instructions')
+
 
 file_header = struct.pack("!11sii", "PGCOPY\n\377\r\n\0", 0, 0)
 file_trailer = "\377\377"
