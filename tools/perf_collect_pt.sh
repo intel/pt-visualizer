@@ -142,6 +142,9 @@ check_args
 
 extra_args=${@:1}
 
+echo "Cleaning perf buildid cache for HHVM. Might need sudo password"
+sudo "$perf_binary" buildid-cache --remove "$hhvm_path"
+
 mkdir -p "$out_dir"/processor-trace
 echo "Running workload"
 echo | http_proxy="" PATH="$default_hhvm_path:$PATH" "$default_hhvm" "$oss_path/perf.php"  \
