@@ -16,6 +16,7 @@ import struct
 import datetime
 import multiprocessing
 import platform
+import re
 
 # To use this script you will need to have installed package python-pyside which
 # provides LGPL-licensed Python bindings for Qt.  You will also need the package
@@ -230,13 +231,19 @@ sys.path.append(os.environ['PERF_EXEC_PATH'] + \
 perf_db_export_mode = True
 perf_db_export_calls = False
 perf_db_export_callchains = False
+perf_collapse_jit_dsos = False
 
 def usage():
-	print >> sys.stderr, "Usage is: export-to-postgresql.py <database name>"
-	raise Exception("Too few arguments")
+	print >> sys.stderr, "Usage is: export-to-postgresql.py <database name> [collapse-jit-dsos]"
+	raise Exception("Wrong usage")
 
 if (len(sys.argv) < 2):
 	usage()
+else:
+	if sys.argv[2] != 'collapse-jit-dsos':
+		usage()
+	else:
+		perf_collapse_jit_dsos = True
 
 dbname = 'sat'
 dbuser = 'sat'
@@ -396,6 +403,7 @@ sample_file		= open_output_file("sample_table.bin")
 
 # dictionary containing instruction stats, where ip is key
 ip_dict = {}
+dso_ids = []
 
 def trace_begin():
 	print datetime.datetime.today(), "Writing to intermediate files..."
@@ -465,6 +473,14 @@ def comm_thread_table(comm_thread_id, comm_id, thread_id, *x):
 	pass
 
 def dso_table(dso_id, machine_id, short_name, long_name, build_id, *x):
+	if perf_collapse_jit_dsos:
+		jit_re = re.compile('jitted-[0-9]+-[0-9]+\.so')
+		if jit_re.match(short_name):
+			dso_ids.append(dso_id)
+			if len(dso_ids) > 1:
+				return;
+			dso_id = dso_ids[0]
+			short_name = "hhvm-jitted.so"
 	n = len(short_name)
 	if n > 255:
 		n = 255
@@ -480,6 +496,9 @@ def symbol_table(symbol_id, dso_id, sym_start, sym_end, binding, symbol_name, *x
 		n = 255
 		symbol_name = symbol_name[:255]
 		print datetime.datetime.today(), "Warning: Symbol name longer than max allowed by DB. Truncating"
+	if perf_collapse_jit_dsos:
+		if dso_id in dso_ids:
+			dso_id = dso_ids[0]
 	fmt = "!hiiihi" + str(n) + "s" + "iqiq"
 	value = struct.pack(fmt, 5, 4, symbol_id, 2, dso_id, n, symbol_name, 8, sym_start, 8, sym_end)
 	symbol_file.write(value)

@@ -161,5 +161,5 @@ echo | http_proxy="" PATH="$default_hhvm_path:$PATH" "$default_hhvm" "$oss_path/
 
 if ! [ -z "$db_script" ]; then
     echo "Inserting perf data into the database"
-    "$perf_binary" script -i "$out_dir"/processor-trace/perf.jitted.data --itrace=i0nse -s "$db_script" "$trace_name"
+    "$perf_binary" script -i "$out_dir"/processor-trace/perf.jitted.data --itrace=i0nse -s "$db_script" "$trace_name" collapse-jit-dsos
 fi
