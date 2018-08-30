@@ -1053,6 +1053,46 @@ def memheatmap_full(traceId, plot_w, plot_h):
                 })
     return jsonify({"ranges":result_ranges})
 
+#
+# Get working set size, per DSO and total
+#
+@app.route('/api/1/wss/<int:traceId>/',
+           methods=['GET'])
+def wss_per_dso(traceId):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select dso_name, sum(octet_length(opcode)) from " +
+                schema + ".instructions_view group by dso_name;")
+    rows = cur.fetchall()
+    rows.sort(key=itemgetter(1))
+    total_wss = 0
+    wss_dict = {}
+    for row in rows:
+        wss_dict[row[0]] = row[1]
+        total_wss += row[1]
+    wss_dict["TOTAL"] = total_wss
+    return json.dumps(wss_dict)
+
+#
+# Get working set size for a DSO and its symbols
+#
+@app.route('/api/1/dsosymwss/<int:traceId>/<dsoName>',
+           methods=['GET'])
+def wss_per_sym(traceId, dsoName):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select symbol_name, sum(octet_length(opcode)) from " +
+                schema + ".instructions_view where dso_name = \'" +
+                dsoName + "\' group by symbol_name;")
+    rows = cur.fetchall()
+    rows.sort(key=itemgetter(1))
+    total_dso_wss = 0
+    wss_sym_dict = {}
+    for row in rows:
+        wss_sym_dict[row[0]] = row[1]
+        total_dso_wss += row[1]
+    wss_sym_dict["TOTAL"] = total_dso_wss
+    return json.dumps(wss_sym_dict)
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5005)
