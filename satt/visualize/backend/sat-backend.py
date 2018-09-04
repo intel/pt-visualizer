@@ -945,11 +945,12 @@ def alignValueTo(val, to):
 @app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>',
            methods=['GET'])
 def memheatmap_full(traceId, plot_w, plot_h):
+    ranges_max_dist = 512 * 1024 * 1024
     log_scale = True
     cur, named_cur = begin_db_request()
     schema = "pt" + str(traceId)
     cur.execute("select ip, length(opcode), exec_count, dso_name from " +
-                schema + ".instructions_view")
+                schema + ".instructions_view order by ip")
     rows = cur.fetchall()
     rows.sort(key=itemgetter(0))
     address_ranges = [[rows[0][0],               # start address
@@ -964,8 +965,9 @@ def memheatmap_full(traceId, plot_w, plot_h):
         start_address = row[0]
         end_address = start_address + row[1] - 1
         current_dso = row[3]
-        if address_ranges[-1][6] != current_dso:
-            address_ranges.append([row[0], end_address, 0, 0,
+        if address_ranges[-1][6] != current_dso or \
+           row[0] - address_ranges[-1][1] > ranges_max_dist:
+            address_ranges.append([start_address, end_address, 0, 0,
                                   None, None, current_dso])
         else:
             address_ranges[-1][1] = end_address
@@ -1005,11 +1007,6 @@ def memheatmap_full(traceId, plot_w, plot_h):
             current_result[idx] += row[2]
     address_ranges[-1][4] = current_result
 
-    # Delete ranges with a mapped length of less than 1 px
-    for idx in range(len(address_ranges) - 1, -1, -1):
-        if address_ranges[idx][2] // mapping < 1:
-            del address_ranges[idx]
-
     m = 1
     if log_scale:
         for addr_range in address_ranges:
@@ -1047,11 +1044,11 @@ def memheatmap_full(traceId, plot_w, plot_h):
                     "bytesLength": addr_range[2],
                     "dataLength": addr_range[3],
                     "plotByteLength": plotByteLength,
-                    "bytesPerPoint": mapping,
                     "data": data,
                     "dso": addr_range[6]
                 })
-    return jsonify({"ranges":result_ranges})
+    return jsonify({"bytesPerPoint": mapping,
+                    "ranges":result_ranges})
 
 #
 # Get working set size, per DSO and total
