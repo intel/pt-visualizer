@@ -154,12 +154,60 @@
               x: 0,
               y: 0,
               width: this.width,
-              height: this.height
+              height: this.height,
+              scale: 1.0,
+              scaleInc: 0.25,
+              maxScale: 10.0,
+              minScale: 1.0
           };
-          this.scale = 1.0;
-          this.scaleInc = 0.25;
-          this.maxScale = 10.0;
-          this.minScale = 1.0;
+
+          this.transform.toLogicalCoords = function(x, y) {
+            if (this.scale > 1.0) {
+              return [
+                Math.floor((x - this.x) / this.scale),
+                Math.floor((y - this.y) / this.scale)];
+            }
+            return [x - this.x, y - this.y];
+          };
+
+          this.transform.toPhysicalCoords = function(x, y) {
+            if (this.scale > 1.0) {
+              return [
+                Math.floor(this.x + x * this.scale),
+                Math.floor(this.y + y * this.scale)];
+            }
+            return [x + this.x, y + this.y];
+          };
+
+          this.transform.zoom = function(zoomIn, target, x, y) {
+            var newScale;
+            if (zoomIn) {
+              newScale = Math.min(this.maxScale, this.scale + this.scaleInc);
+            } else {
+              newScale= Math.max(this.minScale, this.scale - this.scaleInc);
+            }
+            if (floatsAreEqual(newScale, this.scale)) {
+              return false;
+            }
+            var logical = this.toLogicalCoords(x, y);
+            this.scale = newScale;
+            this.width = target.backBuffer.width * this.scale;
+            this.height = target.backBuffer.height * this.scale;
+            this.x = clampValue(x - logical[0] * this.scale -
+                                this.scale / 2,
+                                -(this.width - target.width), 0);
+            this.y = clampValue(y - logical[1] * this.scale -
+                                this.scale / 2,
+                                -(this.height - target.height), 0);
+            return true;
+          };
+
+          this.transform.pan = function(target, deltaX, deltaY) {
+            this.x = clampValue(this.x + deltaX,
+                                -(this.width - target.width), 0);
+            this.y = clampValue(this.y + deltaY,
+                                -(this.height - target.height), 0);
+          };
 
           this.dragInfo = {
             lastX: 0,
@@ -190,13 +238,11 @@
           };
 
           this.cross.draw = function(ctx) {
-            if (this.active) {
-              ctx.fillStyle = this.color;
-              ctx.beginPath();
-              ctx.fillRect(0, this.y, ctx.canvas.width, 1);
-              ctx.fillRect(this.x, 0, 1, ctx.canvas.height);
-              ctx.stroke();
-            }
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.fillRect(0, this.y, ctx.canvas.width, 1);
+            ctx.fillRect(this.x, 0, 1, ctx.canvas.height);
+            ctx.stroke();
           };
 
           this.infoWindow = {
@@ -229,7 +275,7 @@
           };
 
           this.infoWindow.draw = function(ctx) {
-            if (!this.active || this.data === null) {
+            if (this.data === null) {
               return;
             }
             ctx.fillStyle = this.parent.config.gridColor;
@@ -277,6 +323,36 @@
             ctx.stroke();
           };
 
+          this.minimapWindow = {
+            active: false,
+            parent: this,
+            scaleFactor: 0.1
+          };
+
+          this.minimapWindow.draw = function(ctx) {
+            var w = Math.floor(
+                          this.parent.backBuffer.width * this.scaleFactor);
+            var h = Math.floor(
+                          this.parent.backBuffer.height * this.scaleFactor);
+            var x = this.parent.width - w - 1;
+            var y = 0;
+            var vis = this.parent.transform.toLogicalCoords(0, 0);
+            vis[0] *= this.scaleFactor;
+            vis[1] *= this.scaleFactor;
+            var totalScale = this.scaleFactor / this.parent.transform.scale;
+            var visW = Math.floor(this.parent.width * totalScale);
+            var visH = Math.floor(this.parent.height * totalScale);
+            ctx.drawImage(this.parent.backBuffer, x, y, w, h);
+            ctx.beginPath();
+            ctx.strokeStyle = '#303030';
+            ctx.rect(x, y, w, h);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.strokeStyle = '#FF4060';
+            ctx.rect(x + vis[0], y + vis[1], visW, visH);
+            ctx.stroke();
+          };
+
           this.highlightRect = {
             x: 0,
             y: 0,
@@ -294,15 +370,14 @@
           };
 
           this.highlightRect.draw = function(ctx) {
-            if (this.active) {
-              ctx.beginPath();
-              ctx.strokeStyle = this.color;
-              ctx.rect(this.x, this.y, this.width, this.height);
-              ctx.stroke();
-            }
+            ctx.beginPath();
+            ctx.strokeStyle = this.color;
+            ctx.rect(this.x, this.y, this.width, this.height);
+            ctx.stroke();
           };
 
-          this.overlays = [this.highlightRect, this.cross, this.infoWindow];
+          this.overlays = [this.highlightRect, this.cross, this.infoWindow,
+                           this.minimapWindow];
 
           this.backBuffer = createCanvas(this.width, this.height);
           this.colorGradient = createColorGradient(this.config.heatmapColors,
@@ -314,7 +389,7 @@
             if (this.data === null) {
               return null;
             }
-            y = this.toLogicalCoords(0, y)[1];
+            y = this.transform.toLogicalCoords(0, y)[1];
             for (var idx in this.data.ranges) {
               if (y >= this.data.ranges[idx].bounds.y &&
                   y <= this.data.ranges[idx].bounds.y +
@@ -329,11 +404,11 @@
 
           this.formatRangeInfo = function(range) {
             return '0x' + padStringStart(
-                            range.startAddress.toString(16), '0', 16) + ' - ' +
+                      range.startAddressAligned.toString(16), '0', 16) + ' - ' +
                    '0x' + padStringStart(
-                            range.endAddress.toString(16), '0', 16) +
-                   ' Length: ' + formatByteSize(range.bytesLength) +
-                   ' DSO: ' + range.dso;
+                        range.endAddressAligned.toString(16), '0', 16) +
+                   ' Length: ' + formatByteSize(range.totalSizeAligned) +
+                   ' DSO: ' + range.dsoName;
           };
 
           this.onRangeHighlight = function(range) {
@@ -346,10 +421,11 @@
               this.infoObject.innerHTML = '';
             } else {
               this.highlightRect.active = true;
-              var y = this.toPhysicalCoords(0, range.bounds.y)[1];
+              var y = this.transform.toPhysicalCoords(0, range.bounds.y)[1];
               this.highlightRect.update(
                                       0, y, this.width,
-                                      Math.floor(range.bounds.h * this.scale));
+                                      Math.floor(range.bounds.h *
+                                                 this.transform.scale));
               this.infoObject.innerHTML = this.formatRangeInfo(range);
             }
           };
@@ -423,7 +499,7 @@
               this.infoWindow.active = false;
             } else {
               this.infoWindow.active = true;
-              var logical = this.toLogicalCoords(x, y);
+              var logical = this.transform.toLogicalCoords(x, y);
               this.infoWindow.update(x, y,
                 this.retrievePointsAround(logical[0], logical[1],
                                           this.infoWindow.cols,
@@ -432,15 +508,9 @@
           };
 
           this.drawOverlays = function(ctx) {
-            for (var idx in this.overlays) {
-              this.overlays[idx].draw(ctx);
-            }
-          };
-
-          this.drawOverlays = function(ctx) {
-            for (var idx in this.overlays) {
-              this.overlays[idx].draw(ctx);
-            }
+            this.overlays.forEach(function(overlay) {
+              if(overlay.active) { overlay.draw(ctx); }
+            });
           };
 
           this.updateDrawingSurface = function() {
@@ -449,39 +519,35 @@
             drawCtx.mozImageSmoothingEnabled = false;
             drawCtx.webkitImageSmoothingEnabled = false;
             drawCtx.msImageSmoothingEnabled = false;
-            if (this.scale > 1.0) {
-              drawCtx.drawImage(this.backBuffer,
-                                this.transform.x, this.transform.y,
-                                this.transform.width,
-                                this.transform.height);
-            } else {
-              drawCtx.drawImage(this.backBuffer, 0, 0);
-            }
+            drawCtx.drawImage(this.backBuffer,
+                              this.transform.x, this.transform.y,
+                              this.transform.width, this.transform.height);
             this.drawOverlays(drawCtx);
           };
 
           this.onMouseMove = function(x, y, shiftKey) {
             if (this.dragInfo.active) {
-               var deltaX = x - this.dragInfo.lastX;
-               var deltaY = y - this.dragInfo.lastY;
-               this.dragInfo.lastX = x;
-               this.dragInfo.lastY = y;
-               this.transform.x = clampValue(
-                                    this.transform.x + deltaX,
-                                    -(this.transform.width - this.width), 0);
-               this.transform.y = clampValue(
-                                    this.transform.y + deltaY,
-                                    -(this.transform.height - this.height), 0);
+                var deltaX = x - this.dragInfo.lastX;
+                var deltaY = y - this.dragInfo.lastY;
+                this.dragInfo.lastX = x;
+                this.dragInfo.lastY = y;
+                this.transform.pan(this, deltaX, deltaY);
             } else {
               if (shiftKey) {
                 y = this.cross.y;
               }
+              this.minimapWindow.active = false;
               this.cross.active = true;
               this.cross.update(x, y);
               this.updateRangeHighlight(y);
               this.updateDataPointHighlight(x, y, this.highlightRange);
             }
             this.updateDrawingSurface();
+          };
+
+          this.dragEnabled = function() {
+            return this.transform.height !== this.height ||
+                   this.transform.width !== this.width;
           };
 
           this.onMouseEnter = function(x, y) {
@@ -505,58 +571,26 @@
           };
 
           this.onMouseDown = function(x, y) {
-            if (this.scale > 1.0) {
+            if (this.dragEnabled()) {
               this.dragInfo.active = true;
               this.dragInfo.lastX = x;
               this.dragInfo.lastY = y;
+              this.minimapWindow.active = true;
               this.onMouseLeave(x, y);
             }
           };
 
           this.onMouseUp = function(x, y) {
             this.dragInfo.active = false;
-          };
-
-          this.toLogicalCoords = function(x, y) {
-            if (this.scale > 1.0) {
-              return [Math.floor((x - this.transform.x) / this.scale),
-                      Math.floor((y - this.transform.y) / this.scale)];
-            }
-            return [x, y];
-          };
-
-          this.toPhysicalCoords = function(x, y) {
-            if (this.scale > 1.0) {
-              return [Math.floor(this.transform.x + x * this.scale),
-                      Math.floor(this.transform.y + y * this.scale)];
-            }
-            return [x, y];
+            this.minimapWindow.active = false;
           };
 
           this.onZoom = function(zoomIn, x, y) {
-            var newScale;
-            if (zoomIn) {
-              newScale = Math.min(this.maxScale, this.scale + this.scaleInc);
-            } else {
-              newScale= Math.max(this.minScale, this.scale - this.scaleInc);
+            if (this.transform.zoom(zoomIn, this, x, y)) {
+              this.highlightRange = null;
+              this.minimapWindow.active = true;
+              this.onMouseLeave(x, y);
             }
-            if (floatsAreEqual(newScale, this.scale)) {
-              return;
-            }
-            var logical = this.toLogicalCoords(x, y);
-            this.scale = newScale;
-            this.transform.width = this.width * this.scale;
-            this.transform.height = this.height * this.scale;
-            this.transform.x = clampValue(
-                                    x - logical[0] * this.scale -
-                                    this.scale / 2,
-                                    -(this.transform.width - this.width), 0);
-            this.transform.y = clampValue(
-                                    y - logical[1] * this.scale -
-                                    this.scale / 2,
-                                    -(this.transform.height - this.height), 0);
-            this.highlightRange = null;
-            this.onMouseMove(x, y);
           };
 
           this.putPixelFromRGBA = function(imageData, offset, rgba, repeat) {
@@ -584,6 +618,12 @@
           };
 
           this.updateBackbufferFromData = function() {
+            var newHeight = this.data !== null ?
+                            Math.max(this.height, this.data.totalHeight):
+                            this.height;
+            if (newHeight !== this.backBuffer.height) {
+              this.backBuffer = createCanvas(this.width, newHeight);
+            }
             var drawCtx = this.backBuffer.getContext('2d');
 
             drawCtx.fillStyle = this.config.heatmapColors[0];
@@ -601,18 +641,19 @@
                                               this.backBuffer.height);
             var imageData = imgObj.data;
 
-            var currentOffset = (this.width * (this.height - 1));
+            var currentOffset = this.backBuffer.width *
+                                (this.backBuffer.height - 1);
             this.data.ranges.forEach(function(range) {
               for (var idx in range.data) {
-                var xDispl = idx % this.width;
+                var xDispl = idx % this.backBuffer.width;
                 var offset = currentOffset + xDispl;
-                if (idx >= this.width) {
+                if (idx >= this.backBuffer.width) {
                   offset -=  idx - xDispl;
                 }
                 this.putPixelFromValue(
                   imageData, (offset << 2), range.data[idx][0]);
               }
-              currentOffset -= range.dataLength;
+              currentOffset -= range.pixelCount;
               this.putPixelFromRGBA(imageData, (currentOffset << 2),
                                     this.gridColorRGBA, this.width);
               currentOffset -= this.width;
@@ -625,13 +666,18 @@
             if (this.data === null) {
               return;
             }
-
             this.data.ranges.sort(
               function(a, b) {
-                return a.startAddress > b.startAddress ? 1 : -1;});
-            var crtY = this.height;
+                return a.index > b.index ? 1 : -1;});
+          };
+
+          this.updateRanges = function() {
+            if (this.data === null) {
+              return;
+            }
+            var crtY = this.backBuffer.height;
             this.data.ranges.forEach(function(range) {
-              var rangeH = range.dataLength / this.width;
+              var rangeH = range.pixelHeight;
               var rangeY = crtY - rangeH;
               range.bounds = {
                 y: rangeY,
@@ -641,9 +687,18 @@
             }, this);
           };
 
+          this.resetTransform = function() {
+            this.transform.width = this.backBuffer.width;
+            this.transform.height = this.backBuffer.height;
+            this.transform.x = 0;
+            this.transform.y = -(this.backBuffer.height - this.height);
+          };
+
           this.onDataUpdate = function() {
             this.processData();
             this.updateBackbufferFromData();
+            this.updateRanges();
+            this.resetTransform();
             this.updateDrawingSurface();
           };
 
@@ -705,7 +760,7 @@
           method: 'GET',
           url: '/api/1/heatmap/' + $routeParams.traceID +
                '/full/' + blazeCanvas.node().width + '/' +
-               blazeCanvas.node().height
+               blazeCanvas.node().height + '/64'
         })
         .success(function(respdata/*, status, headers, config*/) {
           blazeMap.updateData(respdata);

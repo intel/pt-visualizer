@@ -936,139 +936,161 @@ def search_full_lost(traceId,pixels,start_time,end_time):
 #
 # Memory Heatmap Full Dataset
 #
+
+# Gets the smallest value >= val which is a multiple of 'to'
 def alignValueTo(val, to):
     if val == 0:
         return to
     md = val % to
     return int(val if md == 0 else val + (to - md))
 
-@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>',
-           methods=['GET'])
-def memheatmap_full(traceId, plot_w, plot_h):
-    ranges_max_dist = 512 * 1024 * 1024
+# Gets the largest value <= val which is a multiple of 'to'
+def closestAlignedValueTo(val, to):
+    return val - (val % to)
+
+@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>/'
+           '<int:bytes_per_pixel>', methods=['GET'])
+def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
+    class MemoryRange:
+        def __init__(self, start_address, end_address, dso_name):
+            self.start_address = start_address
+            self.end_address = end_address
+            self.dso_name = dso_name
+            self.data_raw = None
+            self.data_normalized = None
+
+        def update_range_info(self):
+            bytes_per_line = bytes_per_pixel * plot_w
+            self.start_address_aligned = closestAlignedValueTo(
+                                                    self.start_address,
+                                                    bytes_per_line)
+            self.end_address_aligned = alignValueTo(self.end_address + 1,
+                                                    bytes_per_line) - 1
+            if self.start_address_aligned >= self.end_address_aligned:
+                raise ("Invalid start address: start: %d end: %d" % (
+                        self.start_address_aligned,
+                        self.end_address_aligned))
+            self.byte_size = self.end_address - self.start_address + 1
+            self.byte_size_aligned = self.end_address_aligned - \
+                                     self.start_address_aligned + 1
+            self.pixel_count = self.byte_size_aligned // bytes_per_pixel
+            self.pixel_height = self.pixel_count // plot_w
+            self.data_raw = [0] * self.pixel_count
+            self.data_normalized = [0] * self.pixel_count
+
+        def add_sample(self, ip, length, count):
+            if ip < self.start_address_aligned or ip > self.end_address_aligned:
+                raise("Invalid IP %x for DSO: %s" % (ip, self.dso_name))
+            start_address = ip - self.start_address_aligned
+            end_address = (start_address + length) - 1
+            start_pix = start_address // bytes_per_pixel
+            end_pix = end_address // bytes_per_pixel
+            for pidx in range(start_pix, end_pix + 1):
+                self.data_raw[pidx] += count
+
+        def process_data(self, log_scale=True):
+            self.max_raw = max(self.data_raw)
+            if log_scale:
+                for idx in range(len(self.data_raw)):
+                    if self.data_raw[idx] > 0:
+                        self.data_normalized[idx] = math.log(
+                                                        self.data_raw[idx], 2)
+                self.max_normalized = max(self.data_normalized)
+            else:
+                self.data_normalized = self.data_raw[:]
+                self.max_normalized = self.max_raw
+
+        def normalize_data(self, scale_max=2047.0, global_max=None):
+            m = self.max_scaled if global_max is None else global_max
+            for idx in range(0, len(self.data_normalized)):
+                if self.data_normalized[idx] > 0:
+                    self.data_normalized[idx] = int(
+                        math.floor(scale_max * self.data_normalized[idx] / m))
+
+        def to_dict(self, index):
+            data = {}
+            for idx in range(len(self.data_raw)):
+                if self.data_raw[idx] != 0:
+                    data[idx] = [self.data_normalized[idx],
+                                 self.data_raw[idx]]
+            return {
+                "index": index,
+                "startAddress": self.start_address,
+                "endAddress": self.end_address,
+                "totalSize": self.byte_size,
+                "startAddressAligned": self.start_address_aligned,
+                "endAddressAligned": self.end_address_aligned,
+                "totalSizeAligned": self.byte_size_aligned,
+                "pixelCount": self.pixel_count,
+                "pixelHeight": self.pixel_height,
+                "dsoName": self.dso_name,
+                "data": data
+            }
+
     log_scale = True
+    use_global_max_for_norm = True
     cur, named_cur = begin_db_request()
     schema = "pt" + str(traceId)
-    cur.execute("select ip, length(opcode), exec_count, dso_name from " +
+    t_instr = schema + ".instructions"
+    t_sym = schema + ".symbols"
+    t_dso = schema + ".dsos"
+
+    cur.execute("select ip, octet_length(opcode), exec_count, dso_name from " +
                 schema + ".instructions_view order by ip")
+
     rows = cur.fetchall()
     rows.sort(key=itemgetter(0))
-    address_ranges = [[rows[0][0],               # start address
-                       rows[0][0] + rows[0][1],  # end address
-                       0,                        # length <- bytes
-                       0,                        # length <- units
-                       None,                     # result array <- absolute
-                       None,                     # result array <- normalized
-                       rows[0][3]]               # DSO name
-                      ]
+    address_ranges = {}
+
     for row in rows:
         start_address = row[0]
         end_address = start_address + row[1] - 1
         current_dso = row[3]
-        if address_ranges[-1][6] != current_dso or \
-           row[0] - address_ranges[-1][1] > ranges_max_dist:
-            address_ranges.append([start_address, end_address, 0, 0,
-                                  None, None, current_dso])
+        if current_dso not in address_ranges:
+            address_ranges[current_dso] = \
+                        MemoryRange(start_address, end_address, current_dso)
         else:
-            address_ranges[-1][1] = end_address
-    total_cells = 0
-    for idx in range(0, len(address_ranges)):
-        address_ranges[idx][2] = address_ranges[idx][1] - \
-                                 address_ranges[idx][0] + 1
-        total_cells += address_ranges[idx][2]
+            address_ranges[current_dso].end_address = end_address
 
     ranges_count = len(address_ranges)
-    available_lines = plot_h - (ranges_count - 1)
-    available_cells = plot_w * available_lines
-    mapping = max(1, math.ceil(1.0 * total_cells / available_cells))
 
-    # Make sure that our mapping won't result in more data than we can display
-    total_lines = 0
-    for addr_range in address_ranges:
-        total_lines += alignValueTo(addr_range[2] // mapping, plot_w)/plot_w
-    if total_lines > available_lines:
-        mapping += 1
+    # Update range internals (get aligned addresses, calculate height etc.)
+    for ar in address_ranges.values():
+        ar.update_range_info()
 
-    # Calculate mapped length
-    for addr_range in address_ranges:
-        addr_range[3] = alignValueTo(addr_range[2] // mapping, plot_w)
+    # Sort ranges by start_address_aligned
+    address_ranges_list = sorted(address_ranges.values(),
+                                 key=lambda x: x.start_address_aligned)
 
-    current_range = 0
-    current_result = [0] * address_ranges[current_range][3]
+    # Compute total chart height (sum of ranges' height)
+    total_pixel_h = sum(range.pixel_height for range in address_ranges_list) + \
+                    len(address_ranges_list) - 1
+
+    # Add samples to ranges
     for row in rows:
-        if row[0] > address_ranges[current_range][1]:
-            address_ranges[current_range][4] = current_result
-            current_range += 1
-            current_result = [0] * address_ranges[current_range][3]
-        start_address = (row[0] - address_ranges[current_range][0]) // mapping
-        start = int(start_address)
-        end = start + int(row[1] // mapping)
-        for idx in range(start, end + 1):
-            current_result[idx] += row[2]
-    address_ranges[-1][4] = current_result
+        address_ranges[row[3]].add_sample(row[0], row[1], row[2])
 
-    m = 1
-    if log_scale:
-        for addr_range in address_ranges:
-            addr_range[5] = addr_range[4][:]
-            for idx in range(0, len(addr_range[4])):
-                if addr_range[4][idx] > 0:
-                    addr_range[5][idx] = math.log(addr_range[5][idx], 2)
-                    if addr_range[5][idx] > m:
-                        m = addr_range[5][idx]
-    else:
-        m = max([max(x[5]) for x in address_ranges])
+    # Process data (create logarithmic scale, calculate max)
+    for ar in address_ranges_list:
+        ar.process_data(log_scale)
 
-    # Normalize result
-    # TODO: when displaying one range only, we should be probably normalize to
-    # max of that range (not global max)
-    for addr_range in address_ranges:
-        for idx in range(0, len(addr_range[4])):
-            if addr_range[5][idx] > 0:
-                addr_range[5][idx] = int(math.floor(
-                                         2047.0 * addr_range[5][idx] / m))
+    # If global max is required, calculate it as the max of all ranges' maxes
+    global_max = None
+    if use_global_max_for_norm:
+        global_max = max(
+                    [ar.max_normalized for ar in address_ranges_list])
+
+    # Normalize data in ranges to [0, 2047] based on either local or global max
+    for ar in address_ranges_list:
+        ar.normalize_data(2047.0, global_max)
+
     # Create result data
-    result_ranges = []
-    for addr_range in address_ranges:
-        data = {}
-        for idx in range(len(addr_range[4])):
-            if addr_range[4][idx] != 0:
-                data[idx] = [addr_range[5][idx], addr_range[4][idx]]
-        if len(data) == 0:
-            continue
-        dataLength = alignValueTo(addr_range[2] // mapping, plot_w)
-        plotByteLength = dataLength * mapping
-        result_ranges.append({
-                    "startAddress": addr_range[0],
-                    "endAddress": addr_range[1],
-                    "bytesLength": addr_range[2],
-                    "dataLength": addr_range[3],
-                    "plotByteLength": plotByteLength,
-                    "data": data,
-                    "dso": addr_range[6]
-                })
-    return jsonify({"bytesPerPoint": mapping,
-                    "ranges":result_ranges})
-
-#
-# Get working set size, per DSO and total
-#
-@app.route('/api/1/wss/<int:traceId>/',
-           methods=['GET'])
-def wss_per_dso(traceId):
-    cur, named_cur = begin_db_request()
-    schema = "pt" + str(traceId)
-    cur.execute("select dso_name, sum(octet_length(opcode)) from " +
-                schema + ".instructions_view group by dso_name;")
-    rows = cur.fetchall()
-    rows.sort(key=itemgetter(1))
-    total_wss = 0
-    wss_dict = {}
-    for row in rows:
-        wss_dict[row[0]] = row[1]
-        total_wss += row[1]
-    wss_dict["TOTAL"] = total_wss
-    return json.dumps(wss_dict)
+    return jsonify({
+        "totalHeight": total_pixel_h,
+        "bytesPerPixel": bytes_per_pixel,
+         "ranges":
+            [ar.to_dict(idx) for idx, ar in enumerate(address_ranges_list)
+    ]})
 
 #
 # Get working set size for a DSO and its symbols
