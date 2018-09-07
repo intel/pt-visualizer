@@ -472,6 +472,12 @@
             }
           };
 
+          this.minimapWindow.minimapDeltasToScreen = function(deltaX, deltaY) {
+            var totalScale = this.parent.transform.scale / this.scaleFactor;
+            return [Math.floor(deltaX * totalScale),
+                    Math.floor(deltaY * totalScale)];
+          };
+
           this.highlightRect = {
             x: 0,
             y: 0,
@@ -671,6 +677,12 @@
                 var deltaY = y - this.dragInfo.lastY;
                 this.dragInfo.lastX = x;
                 this.dragInfo.lastY = y;
+                if (shiftKey) {
+                  var newDeltas = this.minimapWindow.minimapDeltasToScreen(
+                                                              deltaX, deltaY);
+                  deltaX = -newDeltas[0];
+                  deltaY = -newDeltas[1];
+                }
                 this.transform.pan(this, deltaX, deltaY);
             } else {
               if (shiftKey) {
@@ -727,7 +739,6 @@
 
           this.onZoom = function(zoomIn, x, y) {
             if (this.transform.zoom(zoomIn, this, x, y)) {
-              this.highlightRange = null;
               this.minimapWindow.active = true;
               this.onMouseLeave(x, y);
             }
