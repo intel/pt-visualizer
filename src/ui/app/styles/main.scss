@@ -251,6 +251,7 @@ $satBtnBackgroundHighlight:            darken($white, 40%) !default;
 .graph-container {
   border-bottom: 1px solid $borderColor;
   padding-bottom: 2px;
+  position: relative;
 }
 
 .process {
@@ -573,6 +574,24 @@ canvas {
   font-family: monospace;
   letter-spacing: +1px;
   color: black;
+}
+
+.overlay {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  background-color: rgba(84, 139, 211, 0.85);
+}
+
+.overlay img {
+  display: block;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1001;
 }
 
 .symbols {

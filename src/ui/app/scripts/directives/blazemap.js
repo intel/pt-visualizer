@@ -5,10 +5,11 @@
     .module('satt')
     .directive('blazeMap', blazeMap);
 
-  blazeMap.$inject = ['$http', '$compile', '$rootScope', '$routeParams', 'blazeMapService'];
+  blazeMap.$inject = ['$http', '$compile', '$rootScope', '$routeParams',
+                      'blazeMapService', '$sce'];
 
   function blazeMap($http, $compile, $rootScope, $routeParams,
-                    blazeMapService) {
+                    blazeMapService, sce) {
     return {
       templateUrl : 'views/blazemap.html',
       restrict: 'E',
@@ -159,9 +160,8 @@
           return (value < min) ? min : (value > max) ? max : value;
         };
 
-        var Blaze = function(canvasObj, infoObj) {
+        var Blaze = function(canvasObj) {
           this.drawingSurface = canvasObj;
-          this.infoObject = infoObj;
           this.width = this.drawingSurface.width;
           this.height = this.drawingSurface.height;
 
@@ -543,7 +543,7 @@
             this.highlightRange = range;
             if (range === null) {
               this.highlightRect.active = false;
-              this.infoObject.innerHTML = '';
+              this.setStatusInfo('');
             } else {
               this.highlightRect.active = true;
               var y = this.transform.toPhysicalCoords(0, range.bounds.y)[1];
@@ -551,12 +551,20 @@
                                       0, y, this.width,
                                       Math.floor(range.bounds.h *
                                                  this.transform.scale));
-              this.infoObject.innerHTML = this.formatRangeInfo(range);
+              this.setStatusInfo(this.formatRangeInfo(range));
             }
           };
 
           this.updateRangeHighlight = function(y) {
             this.onRangeHighlight(this.getRangeAtPos(y));
+          };
+
+          this.setStatusInfo = function(text) {
+            _.defer(function() {
+              scope.$apply(function() {
+                scope.blazeInfo = sce.trustAsHtml(text);
+              });
+            });
           };
 
           this.retrievePointsAround = function(x, y, w, h, range) {
@@ -864,61 +872,86 @@
       var blazeInfo = d3.select(element[0]).select('.blazeinfo');
       var blazeMap = new Blaze(blazeCanvas.node(), blazeInfo.node());
       blazeMap.updateData(null);
+      scope.heatmapLoading = false;
 
-      blazeCanvas.on('mouseenter',
-                      function() {
-                        var coords = d3.mouse(this);
-                        blazeMap.onMouseEnter(coords[0], coords[1]);
-                    });
+      var enableInputEvents = function() {
+        blazeCanvas.on('mouseenter',
+                        function() {
+                          var coords = d3.mouse(this);
+                          blazeMap.onMouseEnter(coords[0], coords[1]);
+                      });
 
-      blazeCanvas.on('mouseleave',
-                      function() {
-                        var coords = d3.mouse(this);
-                        blazeMap.onMouseLeave(coords[0], coords[1]);
-                    });
+        blazeCanvas.on('mouseleave',
+                        function() {
+                          var coords = d3.mouse(this);
+                          blazeMap.onMouseLeave(coords[0], coords[1]);
+                      });
 
-      blazeCanvas.on('mousemove',
-                      function() {
-                        var coords = d3.mouse(this);
-                        blazeMap.onMouseMove(coords[0], coords[1],
-                                             d3.event.shiftKey);
-                    });
+        blazeCanvas.on('mousemove',
+                        function() {
+                          var coords = d3.mouse(this);
+                          blazeMap.onMouseMove(coords[0], coords[1],
+                                              d3.event.shiftKey);
+                      });
 
-      blazeCanvas.on('mousedown',
-                      function() {
-                        var coords = d3.mouse(this);
-                        if (d3.event.target.setPointerCapture) {
-                          d3.event.target.setPointerCapture(1);
-                        } else if (d3.event.target.setCapture) {
-                          d3.event.target.setCapture();
-                        }
-                        blazeMap.onMouseDown(coords[0], coords[1]);
-                    });
+        blazeCanvas.on('mousedown',
+                        function() {
+                          var coords = d3.mouse(this);
+                          if (d3.event.target.setPointerCapture) {
+                            d3.event.target.setPointerCapture(1);
+                          } else if (d3.event.target.setCapture) {
+                            d3.event.target.setCapture();
+                          }
+                          blazeMap.onMouseDown(coords[0], coords[1]);
+                      });
 
-      blazeCanvas.on('mouseup',
-                      function() {
-                        var coords = d3.mouse(this);
-                        blazeMap.onMouseUp(coords[0], coords[1]);
-                    });
+        blazeCanvas.on('mouseup',
+                        function() {
+                          var coords = d3.mouse(this);
+                          blazeMap.onMouseUp(coords[0], coords[1]);
+                      });
 
-      blazeCanvas.on('wheel',
-                      function() {
-                        var coords = d3.mouse(this);
-                        blazeMap.onZoom(d3.event.deltaY < 0, coords[0],
-                                        coords[1]);
-                    });
-      $http(
-        {
-          method: 'GET',
-          url: '/api/1/heatmap/' + $routeParams.traceID +
-               '/full/' + blazeCanvas.node().width + '/64'
-        })
-        .success(function(respdata/*, status, headers, config*/) {
-          blazeMap.updateData(respdata);
-        })
-        .error(function(data, status, headers, config) {
-          console.log('Error retrieving full heatmap: ', status);
-      });
+        blazeCanvas.on('wheel',
+                        function() {
+                          var coords = d3.mouse(this);
+                          blazeMap.onZoom(d3.event.deltaY < 0, coords[0],
+                                          coords[1]);
+                      });
+      };
+
+      var disableInputEvents = function() {
+        blazeCanvas.on('mouseenter', null);
+        blazeCanvas.on('mouseleave', null);
+        blazeCanvas.on('mousedown', null);
+        blazeCanvas.on('mouseup', null);
+        blazeCanvas.on('wheel', null);
+      };
+
+      var doRequest = function(bytesPerPixel) {
+        if (scope.heatmapLoading === true) {
+          return;
+        }
+        scope.heatmapLoading = true;
+        blazeMap.setStatusInfo('<b>Loading...</b>');
+        disableInputEvents();
+        $http(
+          {
+            method: 'GET',
+            url: '/api/1/heatmap/' + $routeParams.traceID +
+                 '/full/' + blazeCanvas.node().width + '/' + bytesPerPixel
+          })
+          .success(function(respdata/*, status, headers, config*/) {
+            scope.heatmapLoading = false;
+            blazeMap.setStatusInfo('');
+            blazeMap.updateData(respdata);
+            enableInputEvents();
+          })
+          .error(function(data, status, headers, config) {
+            console.log('Error retrieving full heatmap: ', status);
+        });
+      }
+
+      doRequest(64);
     }
   };
 }

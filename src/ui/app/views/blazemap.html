@@ -1,8 +1,11 @@
 <div class="row-fluid graph-container winm">
+    <div class="overlay" ng-if="heatmapLoading" style="width: 1400px; height: 500px; margin-left: 5px;">
+        <img src="css/img/loading-small.gif" />
+    </div>
     <canvas id="blaze-{{id}}" class="blazemap" width="1400" height="500" style="width: 1400px; height: 500px; margin-left: 5px;"></canvas>
 </div>
 <div class="row-fluid">
-    <div class="blazeinfo" style="width: 1400px; margin-left: 5px;"></div>
+    <div class="blazeinfo" style="width: 1400px; margin-left: 5px;" ng-bind-html="blazeInfo"></div>
 </div>
 <div class="row-fluid">
     <div style="margin-left: 5px;" ng-if="symbolsForCrtSample">
