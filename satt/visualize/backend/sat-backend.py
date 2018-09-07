@@ -948,9 +948,9 @@ def alignValueTo(val, to):
 def closestAlignedValueTo(val, to):
     return val - (val % to)
 
-@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/<int:plot_h>/'
+@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/'
            '<int:bytes_per_pixel>', methods=['GET'])
-def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
+def memheatmap_full(traceId, plot_w, bytes_per_pixel):
     class MemoryRange:
         def __init__(self, start_address, end_address, dso_name):
             self.start_address = start_address
@@ -958,6 +958,7 @@ def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
             self.dso_name = dso_name
             self.data_raw = None
             self.data_normalized = None
+            self.wss = 0
 
         def update_range_info(self):
             bytes_per_line = bytes_per_pixel * plot_w
@@ -967,7 +968,7 @@ def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
             self.end_address_aligned = alignValueTo(self.end_address + 1,
                                                     bytes_per_line) - 1
             if self.start_address_aligned >= self.end_address_aligned:
-                raise ("Invalid start address: start: %d end: %d" % (
+                raise Exception("Invalid start address: start: %d end: %d" % (
                         self.start_address_aligned,
                         self.end_address_aligned))
             self.byte_size = self.end_address - self.start_address + 1
@@ -980,13 +981,15 @@ def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
 
         def add_sample(self, ip, length, count):
             if ip < self.start_address_aligned or ip > self.end_address_aligned:
-                raise("Invalid IP %x for DSO: %s" % (ip, self.dso_name))
+                raise Exception(
+                            "Invalid IP %x for DSO: %s" % (ip, self.dso_name))
             start_address = ip - self.start_address_aligned
             end_address = (start_address + length) - 1
             start_pix = start_address // bytes_per_pixel
             end_pix = end_address // bytes_per_pixel
             for pidx in range(start_pix, end_pix + 1):
                 self.data_raw[pidx] += count
+            self.wss += length
 
         def process_data(self, log_scale=True):
             self.max_raw = max(self.data_raw)
@@ -1024,6 +1027,8 @@ def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
                 "pixelCount": self.pixel_count,
                 "pixelHeight": self.pixel_height,
                 "dsoName": self.dso_name,
+                "bytesPerPixel": bytes_per_pixel,
+                "wss": self.wss,
                 "data": data
             }
 
@@ -1088,9 +1093,31 @@ def memheatmap_full(traceId, plot_w, plot_h, bytes_per_pixel):
     return jsonify({
         "totalHeight": total_pixel_h,
         "bytesPerPixel": bytes_per_pixel,
-         "ranges":
-            [ar.to_dict(idx) for idx, ar in enumerate(address_ranges_list)
-    ]})
+        "ranges":
+            [ar.to_dict(idx) for idx, ar in enumerate(address_ranges_list)]
+        })
+
+
+#
+# Get working set size, per DSO and total
+#
+@app.route('/api/1/wss/<int:traceId>/',
+           methods=['GET'])
+def wss_per_dso(traceId):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select dso_name, sum(octet_length(opcode)) from " +
+                schema + ".instructions_view group by dso_name;")
+    rows = cur.fetchall()
+    rows.sort(key=itemgetter(1))
+    total_wss = 0
+    wss_dict = {}
+    for row in rows:
+        wss_dict[row[0]] = row[1]
+        total_wss += row[1]
+    wss_dict["TOTAL"] = total_wss
+    return json.dumps(wss_dict)
+
 
 #
 # Get working set size for a DSO and its symbols
@@ -1110,8 +1137,23 @@ def wss_per_sym(traceId, dsoName):
     for row in rows:
         wss_sym_dict[row[0]] = row[1]
         total_dso_wss += row[1]
-    wss_sym_dict["TOTAL"] = total_dso_wss
+    wss_sym_dict["total"] = total_dso_wss
     return json.dumps(wss_sym_dict)
+
+
+#
+# Get symbols names found between two addresses
+#
+@app.route('/api/1/symbolsataddr/<int:traceId>/<int:start_addr>/<int:end_addr>',
+           methods=['GET'])
+def symbols_at_addr(traceId, start_addr, end_addr):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select distinct symbol_name from " + schema +
+                ".instructions_view where ip >= " + str(start_addr) +
+                " and ip <= " + str(end_addr))
+    return jsonify([elem[0] for elem in cur.fetchall()])
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5005)

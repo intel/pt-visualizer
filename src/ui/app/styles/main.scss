@@ -563,3 +563,21 @@ canvas {
   color: lightgreen;
   background-color: darkslategrey;
 }
+
+.blazeinfo b {
+  color: lightblue;
+}
+
+.symbolsinfo {
+  font-size: 12px;
+  font-family: monospace;
+  letter-spacing: +1px;
+  color: black;
+}
+
+.symbols {
+  font-size: 12px;
+  font-family: monospace;
+  color: darkslategrey;
+  list-style-type: square;
+}

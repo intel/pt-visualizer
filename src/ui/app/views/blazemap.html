@@ -4,3 +4,11 @@
 <div class="row-fluid">
     <div class="blazeinfo" style="width: 1400px; margin-left: 5px;"></div>
 </div>
+<div class="row-fluid">
+    <div style="margin-left: 5px;" ng-if="symbolsForCrtSample">
+        <div class="symbolsinfo">Symbols at sample</div>
+        <ul class="symbols">
+            <li ng-repeat="symbol in symbolsForCrtSample">{{symbol}}</li>
+        </ul>
+    </div>
+</div>

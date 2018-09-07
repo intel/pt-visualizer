@@ -141,6 +141,20 @@
           return str;
         };
 
+        var addressToString = function(address) {
+          return '0x' + padStringStart(address.toString(16), '0', 16);
+        };
+
+        var formatAddrRange = function(stringOne, stringTwo) {
+          var maxLen = Math.min(stringOne.length, stringTwo.length);
+          var idx;
+          for (idx = 0; idx < maxLen; ++idx) {
+            if(stringOne[idx] !== stringTwo[idx]) { break; }
+          }
+          return stringOne.substring(0, idx) + '[' + stringOne.substring(idx) +
+                 ':' + stringTwo.substring(idx) + ']';
+        };
+
         var clampValue = function(value, min, max) {
           return (value < min) ? min : (value > max) ? max : value;
         };
@@ -150,6 +164,7 @@
           this.infoObject = infoObj;
           this.width = this.drawingSurface.width;
           this.height = this.drawingSurface.height;
+
           this.transform = {
               x: 0,
               y: 0,
@@ -245,24 +260,39 @@
             ctx.stroke();
           };
 
+          this.focusedSample = {
+            x: -1,
+            y: -1
+          };
+
+          this.focusedSample.isSame = function(logical) {
+            return this.x === logical[0] && this.y === logical[1];
+          };
+
+          this.focusedSample.update = function(logical) {
+            this.x = logical[0];
+            this.y = logical[1];
+          };
+
           this.infoWindow = {
             x: 0,
             y: 0,
-            width: 150,
+            width: 240,
             height: 170,
             infoBarH: 20,
             rows: 5,
-            cols: 5,
+            cols: 8,
             active: false,
             parent: this,
             data: null,
             spacing: 10,
             cellFontSize: 10,
+            barFontSize: 12,
             borderColor: '#536666',
             selectedColor: '#FF5964'
           };
 
-          this.infoWindow.update = function(x, y, data) {
+          this.infoWindow.update = function(x, y) {
               this.x = x + this.spacing;
               if ((this.x + this.width) >= this.parent.width) {
                 this.x = x - this.width - this.spacing - 1;
@@ -271,13 +301,16 @@
               if (this.y < 0) {
                 this.y = y + this.spacing;
               }
-              this.data = data;
+          };
+
+          this.infoWindow.getCrtSampleText = function() {
+            var startAddr = addressToString(this.data.startAddress);
+            var endAddr = addressToString(this.data.endAddress);
+            return formatAddrRange(startAddr, endAddr) + ' > ' +
+                   this.data.hitCount;
           };
 
           this.infoWindow.draw = function(ctx) {
-            if (this.data === null) {
-              return;
-            }
             ctx.fillStyle = this.parent.config.gridColor;
             ctx.fillRect(this.x, this.y, this.width, this.height);
             var cellW = this.width / this.cols;
@@ -299,10 +332,11 @@
                       (row !== currentR || col !== currentC)) {
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
-                    ctx.font = this.cellFontSize + 'px monospace';
+                    ctx.textBaseline = 'middle';
+                    ctx.font = this.cellFontSize + 'px sans-serif';
                     ctx.fillText(formatPercent(this.data.deltaValues[crtCell]),
                                  crtX + (cellW >> 1),
-                                 crtY + ((cellH - this.cellFontSize) >> 1));
+                                 crtY + (cellH >> 1));
                   }
                 }
                 crtX += cellW;
@@ -321,6 +355,82 @@
                      this.y + cellH * ((this.rows - 1) >> 1),
                      cellW, cellH);
             ctx.stroke();
+            if (this.data.hitCount !== -1) {
+              ctx.font = this.barFontSize + 'px sans-serif';
+              ctx.fillStyle = '#000000';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(this.getCrtSampleText(),
+                           this.x + (this.width >> 1),
+                           this.y + this.height - (this.infoBarH >> 1));
+            }
+          };
+
+          this.symAtAddrRequest = {
+            currentStartAddr: -1,
+            pendingStartAddr: -1,
+            pendingEndAddr: -1,
+            requestActive: false
+          };
+
+          this.symAtAddrRequest.updateSymbolsList = function(value) {
+            _.defer(function() {
+              scope.$apply(function() {
+                scope.symbolsForCrtSample = value;
+              });
+            });
+          };
+
+          this.symAtAddrRequest.update = function(startAddress, endAddress) {
+            if (this.currentStartAddr !== startAddress) {
+              if (this.requestActive) {
+                this.pendingStartAddr = startAddress;
+                this.pendingEndAddr = endAddress;
+                if (startAddress !== -1) {
+                  this.updateSymbolsList(['...']);
+                } else {
+                  this.updateSymbolsList(null);
+                }
+              } else {
+                this.currentStartAddr = startAddress;
+                this.pendingStartAddr = startAddress;
+                if (startAddress !== -1) {
+                  this.doRequest(startAddress, endAddress);
+                } else {
+                  this.updateSymbolsList(null);
+                }
+              }
+            }
+          };
+
+          this.symAtAddrRequest.doRequest = function(startAddress, endAddress) {
+            this.requestActive = true;
+            var self = this;
+            $http(
+              {
+                method: 'GET',
+                url: '/api/1/symbolsataddr/' + $routeParams.traceID +
+                     '/' + startAddress + '/' +
+                     endAddress
+              })
+              .success(function(respdata/*, status, headers, config*/) {
+                if (self.pendingStartAddr === self.currentStartAddr) {
+                  self.updateSymbolsList(respdata.length > 0 ? respdata : null);
+                  self.requestActive = false;
+                } else {
+                  var start = self.pendingStartAddr;
+                  var end = self.pendingEndAddr;
+                  self.currentStartAddr = start;
+                  if (start !== -1) {
+                    self.doRequest(start, end);
+                  } else {
+                    self.requestActive = false;
+                  }
+                }
+              })
+              .error(function(data, status, headers, config) {
+                console.log('Error retrieving full symbols: ', status);
+            });
           };
 
           this.minimapWindow = {
@@ -403,12 +513,12 @@
           this.highlightRange = null;
 
           this.formatRangeInfo = function(range) {
-            return '0x' + padStringStart(
-                      range.startAddressAligned.toString(16), '0', 16) + ' - ' +
-                   '0x' + padStringStart(
-                        range.endAddressAligned.toString(16), '0', 16) +
-                   ' Length: ' + formatByteSize(range.totalSizeAligned) +
-                   ' DSO: ' + range.dsoName;
+            return '<b>' + addressToString(range.startAddressAligned) +
+                   '</b> - <b>' +
+                   addressToString(range.endAddressAligned) +
+                   '</b> Length: <b>' + formatByteSize(range.totalSizeAligned) +
+                   '</b> Working size: <b>' + formatByteSize(range.wss) +
+                   '</b> DSO: <b>' + range.dsoName + '</b>';
           };
 
           this.onRangeHighlight = function(range) {
@@ -435,20 +545,23 @@
           };
 
           this.retrievePointsAround = function(x, y, w, h, range) {
-            y = Math.floor(range.bounds.h - (y - range.bounds.y) - 1);
+            y = range.bounds.h - (y - range.bounds.y) - 1;
+            if (y < 0 || y >= range.bounds.h) {
+              return null;
+            }
             var startX = x - ((w - 1) >> 1);
             var endX = startX + w;
             var startY = y + ((h - 1) >> 1);
             var endY = startY - h;
             var arr = [];
             var deltaValues = [];
-            var hitCount = -1;
+            var hitCount = 0;
             var foundOne = false;
             for (var crtY = startY; crtY > endY; --crtY) {
               var overIndexStart = crtY * this.width;
               for (var crtX = startX; crtX < endX; ++crtX) {
                 var crtVal = -1;
-                var absVal = NaN;
+                var absVal = -1;
                 if (crtX >= 0 &&
                     crtY >= 0 &&
                     crtY < range.bounds.h &&
@@ -462,9 +575,9 @@
                     crtVal = 0;
                     absVal = 0;
                   }
-                }
-                if (crtX === x && crtY === y) {
-                  hitCount = absVal;
+                  if (crtX === x && crtY === y) {
+                    hitCount = absVal;
+                  }
                 }
                 arr.push(crtVal);
                 deltaValues.push(absVal);
@@ -473,18 +586,20 @@
             if (foundOne === false) {
               return null;
             }
-            if (!isNaN(hitCount) && hitCount !== 0) {
+            if (hitCount > 0) {
               for (var idx in deltaValues) {
-                if (!isNaN(deltaValues[idx])) {
+                if (deltaValues[idx] !== -1) {
                   deltaValues[idx] = (deltaValues[idx] - hitCount) / hitCount;
+                } else {
+                  deltaValues[idx] = NaN;
                 }
               }
             } else {
               deltaValues = null;
             }
-            var startAddress = range.startAddress +
-                                (y * this.width + x) * this.data.mapping;
-            var endAddress = startAddress + this.data.mapping;
+            var startAddress = range.startAddressAligned +
+                                (y * this.width + x) * this.data.bytesPerPixel;
+            var endAddress = startAddress + this.data.bytesPerPixel - 1;
             return {
               colorValues: arr,
               deltaValues: deltaValues,
@@ -497,13 +612,29 @@
           this.updateDataPointHighlight = function(x, y, range) {
             if (range === null) {
               this.infoWindow.active = false;
+              this.focusedSample.update([-1, -1], null);
+              this.symAtAddrRequest.update(-1, -1);
             } else {
-              this.infoWindow.active = true;
               var logical = this.transform.toLogicalCoords(x, y);
-              this.infoWindow.update(x, y,
-                this.retrievePointsAround(logical[0], logical[1],
-                                          this.infoWindow.cols,
-                                          this.infoWindow.rows, range));
+              if (!this.focusedSample.isSame(logical)) {
+                var sampleData = this.retrievePointsAround(
+                                    logical[0], logical[1],
+                                    this.infoWindow.cols,
+                                    this.infoWindow.rows, range);
+                this.focusedSample.update(logical);
+                this.infoWindow.active = sampleData !== null;
+                this.infoWindow.data = sampleData;
+                var startAddr = -1;
+                var endAddr = -1;
+                if (sampleData !== null && sampleData.hitCount > 0) {
+                  startAddr = sampleData.startAddress;
+                  endAddr = sampleData.endAddress;
+                }
+                this.symAtAddrRequest.update(startAddr, endAddr);
+              }
+              if (this.infoWindow.active) {
+                this.infoWindow.update(x, y);
+              }
             }
           };
 
@@ -759,8 +890,7 @@
         {
           method: 'GET',
           url: '/api/1/heatmap/' + $routeParams.traceID +
-               '/full/' + blazeCanvas.node().width + '/' +
-               blazeCanvas.node().height + '/64'
+               '/full/' + blazeCanvas.node().width + '/64'
         })
         .success(function(respdata/*, status, headers, config*/) {
           blazeMap.updateData(respdata);
