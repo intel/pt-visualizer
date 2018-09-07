@@ -411,7 +411,8 @@
                 method: 'GET',
                 url: '/api/1/symbolsataddr/' + $routeParams.traceID +
                      '/' + startAddress + '/' +
-                     endAddress
+                     endAddress,
+                cache: true
               })
               .success(function(respdata/*, status, headers, config*/) {
                 if (self.pendingStartAddr === self.currentStartAddr) {
@@ -461,6 +462,14 @@
             ctx.strokeStyle = '#FF4060';
             ctx.rect(x + vis[0], y + vis[1], visW, visH);
             ctx.stroke();
+          };
+
+          this.minimapWindow.adjustScale = function() {
+            var h = this.parent.backBuffer.height * this.scaleFactor;
+            var maxHeight = this.parent.height * 0.65;
+            if (h > maxHeight) {
+              this.scaleFactor = maxHeight / this.parent.backBuffer.height;
+            }
           };
 
           this.highlightRect = {
@@ -830,6 +839,7 @@
             this.updateBackbufferFromData();
             this.updateRanges();
             this.resetTransform();
+            this.minimapWindow.adjustScale();
             this.updateDrawingSurface();
           };
 
