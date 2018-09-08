@@ -851,6 +851,7 @@
             this.transform.height = this.backBuffer.height;
             this.transform.x = 0;
             this.transform.y = -(this.backBuffer.height - this.height);
+            this.transform.scale = 1.0;
           };
 
           this.onDataUpdate = function() {
@@ -873,6 +874,7 @@
       var blazeMap = new Blaze(blazeCanvas.node(), blazeInfo.node());
       blazeMap.updateData(null);
       scope.heatmapLoading = false;
+      scope.bytesPerPixel = 64;
 
       var enableInputEvents = function() {
         blazeCanvas.on('mouseenter',
@@ -949,7 +951,11 @@
           .error(function(data, status, headers, config) {
             console.log('Error retrieving full heatmap: ', status);
         });
-      }
+      };
+
+      scope.onUpdateBpp = function(value) {
+        doRequest(value);
+      };
 
       doRequest(64);
     }

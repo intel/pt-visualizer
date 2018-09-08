@@ -554,8 +554,12 @@ canvas {
   -ms-interpolation-mode: nearest-neighbor;
 }
 
+.blazemap {
+  margin: 0px 0px 0px 5px;
+}
+
 .blazeinfo {
-  margin: 0px;
+  margin: 0px 0px 0px 5px;
   padding-left: 3px;
   padding-top: 5px;
   font-size: 14px;
@@ -579,6 +583,7 @@ canvas {
 .overlay {
   width: 100%;
   height: 100%;
+  margin-left: 5px;
   position: absolute;
   top: 0;
   left: 0;
@@ -599,4 +604,20 @@ canvas {
   font-family: monospace;
   color: darkslategrey;
   list-style-type: square;
+}
+
+.heatmapoptions {
+  margin-left: 5px;
+}
+
+.heatmapoptions label {
+  margin: 0px 5px 0px 0px;
+  float: left;
+  display: block;
+  font-size: 12px;
+  font-family: sans-serif;
+}
+
+.heatmapoptions input {
+  margin: 0px 2px 0px 5px;
 }
