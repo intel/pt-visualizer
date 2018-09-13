@@ -52,9 +52,9 @@
 
 
         var alignValueTo = function(val, to) {
-          if (val == 0) { return to; }
+          if (val === 0) { return to; }
           var md = val % to;
-          return md == 0 ? val : val + (to - md);
+          return md === 0 ? val : val + (to - md);
         };
 
         var closestAlignedValueTo = function(val, to) {
@@ -175,7 +175,6 @@
           this.drawingSurface = canvasObj;
           this.width = this.drawingSurface.width;
           this.height = this.drawingSurface.height;
-          this.mapHeight = 0;
 
           this.transform = {
               x: 0,
@@ -293,7 +292,7 @@
             height: 170,
             infoBarH: 20,
             rows: 5,
-            cols: 8,
+            cols: 7,
             active: false,
             parent: this,
             data: null,
@@ -538,6 +537,7 @@
           };
 
           this.highlightRange = null;
+          this.selectedRange = null;
 
           this.formatRangeInfo = function(range) {
             return '<b>' + addressToString(range.displStartAddress) +
@@ -549,7 +549,7 @@
           };
 
           this.onRangeHighlight = function(range) {
-            if (this.highlightRange === range) {
+            if (this.selectedRange !== null || this.highlightRange === range) {
               return;
             }
             this.highlightRange = range;
@@ -565,6 +565,20 @@
                                                  this.transform.scale));
               this.setStatusInfo(this.formatRangeInfo(range));
             }
+          };
+
+          this.onRangeSelected = function(range) {
+            if (this.selectedRange != range) {
+              this.selectedRange = range;
+              if (range != null) {
+                this.setStatusInfo(this.formatRangeInfo(range));
+              }
+            }
+          };
+
+          this.getActiveRange = function() {
+            return this.selectedRange !== null ? this.selectedRange :
+                   this.highlightRange;
           };
 
           this.updateRangeHighlight = function(y) {
@@ -655,7 +669,8 @@
                 var sampleData = this.retrievePointsAround(
                                     logical[0], logical[1],
                                     this.infoWindow.cols,
-                                    this.infoWindow.rows, range);
+                                    this.infoWindow.rows,
+                                    range);
                 this.focusedSample.update(logical);
                 this.infoWindow.active = sampleData !== null;
                 this.infoWindow.data = sampleData;
@@ -712,7 +727,7 @@
               this.cross.active = true;
               this.cross.update(x, y);
               this.updateRangeHighlight(y);
-              this.updateDataPointHighlight(x, y, this.highlightRange);
+              this.updateDataPointHighlight(x, y, this.getActiveRange());
             }
             this.updateDrawingSurface();
           };
@@ -730,7 +745,7 @@
               this.cross.active = true;
               this.cross.update(x, y);
               this.updateRangeHighlight(y);
-              this.updateDataPointHighlight(x, y, this.highlightRange);
+              this.updateDataPointHighlight(x, y, this.getActiveRange());
             }
             this.updateDrawingSurface();
           };
@@ -788,10 +803,8 @@
                     this.colorGradient[gradientOffset + 2] + ')';
           };
 
-          this.updateBackbufferFromData = function() {
-            var newHeight = this.data !== null ?
-                            Math.max(this.height, this.mapHeight):
-                            this.height;
+          this.updateBackbufferFromRanges = function(ranges) {
+            var newHeight = this.updateRangesBounds(ranges);
             if (newHeight !== this.backBuffer.height) {
               this.backBuffer = createCanvas(this.width, newHeight);
             }
@@ -801,7 +814,7 @@
             drawCtx.fillRect(0, 0, this.backBuffer.width,
                              this.backBuffer.height);
 
-            if (this.data === null) {
+            if (ranges === null) {
               return;
             }
 
@@ -814,7 +827,7 @@
 
             var currentOffset = this.backBuffer.width *
                                 (this.backBuffer.height - 1);
-            this.data.ranges.forEach(function(range) {
+            ranges.forEach(function(range) {
               for (var idx in range.data) {
                 idx = parseInt(idx);
                 var targetIdx = idx + range.idxCorrection;
@@ -848,7 +861,9 @@
             if (this.data === null) {
               return;
             }
-            this.mapHeight = 0;
+            var availableDSOs = [{ id: 0,
+                                   name: 'all',
+                                   range: null}];
             this.data.ranges.forEach(function(range) {
               var startSample = Math.floor(range.startAddressAligned /
                                            scope.bytesPerSample);
@@ -869,15 +884,31 @@
               range.bounds = {h: Math.floor(range.sampleCount /
                                             this.width),
                               y: 0};
-              this.mapHeight += range.bounds.h;
+              availableDSOs.push({ id: range.index + 1,
+                                   name: range.dsoName,
+                                   range: range});
             }, this);
-            this.mapHeight += this.data.ranges.length - 1;
 
-            var crtY = this.mapHeight;
-            this.data.ranges.forEach(function(range) {
+            scope.availableDSOs = availableDSOs;
+            scope.selectedDSO = scope.availableDSOs[0];
+          };
+
+          this.updateRangesBounds = function(ranges) {
+            if (ranges === null) {
+              return this.height;
+            }
+            var totalHeight = 0;
+            ranges.forEach(function(range) {
+              totalHeight += range.bounds.h;
+            });
+            totalHeight += ranges.length - 1;
+            totalHeight = Math.max(this.height, totalHeight);
+            var crtY = totalHeight;
+            ranges.forEach(function(range) {
               range.bounds.y = crtY - range.bounds.h;
               crtY -= (range.bounds.h + 1);
-            }, this);
+            });
+            return totalHeight;
           };
 
           this.resetTransform = function() {
@@ -891,7 +922,8 @@
           this.onDataUpdate = function() {
             this.processData();
             this.updateRanges();
-            this.updateBackbufferFromData();
+            this.updateBackbufferFromRanges(
+                                  this.data !== null ? this.data.ranges : null);
             this.resetTransform();
             this.minimapWindow.adjustScale();
             this.updateDrawingSurface();
@@ -907,6 +939,7 @@
       var blazeInfo = d3.select(element[0]).select('.blazeinfo');
       var blazeMap = new Blaze(blazeCanvas.node(), blazeInfo.node());
       blazeMap.updateData(null);
+
       scope.heatmapLoading = false;
       scope.bytesPerSample = 64;
 
@@ -989,6 +1022,19 @@
 
       scope.onUpdateBpp = function(value) {
         doRequest(value);
+      };
+
+      scope.onUpdateDSO = function(value) {
+        blazeMap.onRangeHighlight(null);
+        blazeMap.onRangeSelected(value.range);
+        if (value.range === null) {
+          blazeMap.updateBackbufferFromRanges(blazeMap.data.ranges);
+        } else {
+          blazeMap.updateBackbufferFromRanges([value.range]);
+        }
+        blazeMap.resetTransform();
+        blazeMap.minimapWindow.adjustScale();
+        blazeMap.updateDrawingSurface();
       };
 
       doRequest(64);

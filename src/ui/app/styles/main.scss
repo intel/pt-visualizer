@@ -555,6 +555,9 @@ canvas {
 }
 
 .blazemap {
+  border: 1px;
+  border-style: solid;
+  border-color: black;
   margin: 0px 0px 0px 5px;
 }
 
@@ -607,7 +610,17 @@ canvas {
 }
 
 .heatmapoptions {
-  margin-left: 5px;
+  padding: 0px;
+  margin: 0px 0px 0px 5px;
+}
+
+.heatmapoptions .separator {
+  margin: 0px 2px 0px 2px;
+  float: left;
+  display: block;
+  width: 3px;
+  height: 20px;
+  background-color: lightslategray;
 }
 
 .heatmapoptions label {
@@ -620,4 +633,13 @@ canvas {
 
 .heatmapoptions input {
   margin: 0px 2px 0px 5px;
+}
+
+.heatmapoptions select {
+  margin: 0px 2px 0px 5px;
+  padding: 0px;
+  font-size: 12px;
+  height: 16px;
+  line-height: 16px;
+  font-family: sans-serif;
 }
