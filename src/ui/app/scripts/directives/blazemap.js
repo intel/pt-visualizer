@@ -50,6 +50,17 @@
           return Math.abs(a - b) < 0.0000000001;
         };
 
+
+        var alignValueTo = function(val, to) {
+          if (val == 0) { return to; }
+          var md = val % to;
+          return md == 0 ? val : val + (to - md);
+        };
+
+        var closestAlignedValueTo = function(val, to) {
+          return val - (val % to);
+        };
+
         var formatByteSize = function(value) {
           if (value < 1024) {
             return value + 'B';
@@ -164,6 +175,7 @@
           this.drawingSurface = canvasObj;
           this.width = this.drawingSurface.width;
           this.height = this.drawingSurface.height;
+          this.mapHeight = 0;
 
           this.transform = {
               x: 0,
@@ -528,10 +540,10 @@
           this.highlightRange = null;
 
           this.formatRangeInfo = function(range) {
-            return '<b>' + addressToString(range.startAddressAligned) +
+            return '<b>' + addressToString(range.displStartAddress) +
                    '</b> - <b>' +
-                   addressToString(range.endAddressAligned) +
-                   '</b> Length: <b>' + formatByteSize(range.totalSizeAligned) +
+                   addressToString(range.displEndAddress) +
+                   '</b> Length: <b>' + formatByteSize(range.displSize) +
                    '</b> Working size: <b>' + formatByteSize(range.wss) +
                    '</b> DSO: <b>' + range.dsoName + '</b>';
           };
@@ -589,7 +601,7 @@
                     crtY >= 0 &&
                     crtY < range.bounds.h &&
                     crtX < this.width) {
-                  var overIndex = overIndexStart + crtX;
+                  var overIndex = overIndexStart + crtX - range.idxCorrection;
                   if (overIndex in range.data) {
                     crtVal = range.data[overIndex][0];
                     absVal = range.data[overIndex][1];
@@ -620,9 +632,9 @@
             } else {
               deltaValues = null;
             }
-            var startAddress = range.startAddressAligned +
-                                (y * this.width + x) * this.data.bytesPerPixel;
-            var endAddress = startAddress + this.data.bytesPerPixel - 1;
+            var startAddress = range.displStartAddress +
+                               (y * this.width + x) * this.data.bytesPerSample;
+            var endAddress = startAddress + this.data.bytesPerSample - 1;
             return {
               colorValues: arr,
               deltaValues: deltaValues,
@@ -778,7 +790,7 @@
 
           this.updateBackbufferFromData = function() {
             var newHeight = this.data !== null ?
-                            Math.max(this.height, this.data.totalHeight):
+                            Math.max(this.height, this.mapHeight):
                             this.height;
             if (newHeight !== this.backBuffer.height) {
               this.backBuffer = createCanvas(this.width, newHeight);
@@ -804,15 +816,17 @@
                                 (this.backBuffer.height - 1);
             this.data.ranges.forEach(function(range) {
               for (var idx in range.data) {
-                var xDispl = idx % this.backBuffer.width;
+                idx = parseInt(idx);
+                var targetIdx = idx + range.idxCorrection;
+                var xDispl = targetIdx % this.backBuffer.width;
                 var offset = currentOffset + xDispl;
-                if (idx >= this.backBuffer.width) {
-                  offset -=  idx - xDispl;
+                if (targetIdx >= this.backBuffer.width) {
+                  offset -=  targetIdx - xDispl;
                 }
                 this.putPixelFromValue(
                   imageData, (offset << 2), range.data[idx][0]);
               }
-              currentOffset -= range.pixelCount;
+              currentOffset -= range.sampleCount;
               this.putPixelFromRGBA(imageData, (currentOffset << 2),
                                     this.gridColorRGBA, this.width);
               currentOffset -= this.width;
@@ -834,15 +848,35 @@
             if (this.data === null) {
               return;
             }
-            var crtY = this.backBuffer.height;
+            this.mapHeight = 0;
             this.data.ranges.forEach(function(range) {
-              var rangeH = range.pixelHeight;
-              var rangeY = crtY - rangeH;
-              range.bounds = {
-                y: rangeY,
-                h: rangeH
-              };
-              crtY -= (rangeH + 1);
+              var startSample = Math.floor(range.startAddressAligned /
+                                           scope.bytesPerSample);
+              var endSample = Math.floor(range.endAddress /
+                                         scope.bytesPerSample);
+              var alignedStartSample = closestAlignedValueTo(
+                                                  startSample, this.width);
+              var alignedEndSample = alignValueTo(endSample + 1,
+                                                  this.width) - 1;
+              range.idxCorrection = startSample - alignedStartSample;
+              range.sampleCount = alignedEndSample - alignedStartSample + 1;
+              range.displStartAddress = alignedStartSample *
+                                        scope.bytesPerSample;
+              range.displEndAddress = alignedEndSample *
+                                        scope.bytesPerSample - 1;
+              range.displSize = range.displEndAddress -
+                                range.displStartAddress + 1;
+              range.bounds = {h: Math.floor(range.sampleCount /
+                                            this.width),
+                              y: 0};
+              this.mapHeight += range.bounds.h;
+            }, this);
+            this.mapHeight += this.data.ranges.length - 1;
+
+            var crtY = this.mapHeight;
+            this.data.ranges.forEach(function(range) {
+              range.bounds.y = crtY - range.bounds.h;
+              crtY -= (range.bounds.h + 1);
             }, this);
           };
 
@@ -856,8 +890,8 @@
 
           this.onDataUpdate = function() {
             this.processData();
-            this.updateBackbufferFromData();
             this.updateRanges();
+            this.updateBackbufferFromData();
             this.resetTransform();
             this.minimapWindow.adjustScale();
             this.updateDrawingSurface();
@@ -874,7 +908,7 @@
       var blazeMap = new Blaze(blazeCanvas.node(), blazeInfo.node());
       blazeMap.updateData(null);
       scope.heatmapLoading = false;
-      scope.bytesPerPixel = 64;
+      scope.bytesPerSample = 64;
 
       var enableInputEvents = function() {
         blazeCanvas.on('mouseenter',
@@ -929,7 +963,7 @@
         blazeCanvas.on('wheel', null);
       };
 
-      var doRequest = function(bytesPerPixel) {
+      var doRequest = function(bytesPerSample) {
         if (scope.heatmapLoading === true) {
           return;
         }
@@ -940,7 +974,7 @@
           {
             method: 'GET',
             url: '/api/1/heatmap/' + $routeParams.traceID +
-                 '/full/' + blazeCanvas.node().width + '/' + bytesPerPixel
+                 '/full/' + bytesPerSample
           })
           .success(function(respdata/*, status, headers, config*/) {
             scope.heatmapLoading = false;

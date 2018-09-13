@@ -4,11 +4,11 @@
             Bytes per pixel
         </label>
         <label>
-            <input type="radio" ng-disabled="heatmapLoading" ng-model="bytesPerPixel" ng-change="onUpdateBpp(bytesPerPixel)" value="64">
+            <input type="radio" ng-disabled="heatmapLoading" ng-model="bytesPerSample" ng-change="onUpdateBpp(bytesPerSample)" value="64">
             64 bytes
         </label>
         <label>
-        <input type="radio" ng-disabled="heatmapLoading" ng-model="bytesPerPixel" ng-change="onUpdateBpp(bytesPerPixel)" value="2048">
+        <input type="radio" ng-disabled="heatmapLoading" ng-model="bytesPerSample" ng-change="onUpdateBpp(bytesPerSample)" value="2048">
             2 Kbytes
         </label>
     </form>

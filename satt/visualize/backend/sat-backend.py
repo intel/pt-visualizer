@@ -948,9 +948,9 @@ def alignValueTo(val, to):
 def closestAlignedValueTo(val, to):
     return val - (val % to)
 
-@app.route('/api/1/heatmap/<int:traceId>/full/<int:plot_w>/'
-           '<int:bytes_per_pixel>', methods=['GET'])
-def memheatmap_full(traceId, plot_w, bytes_per_pixel):
+@app.route('/api/1/heatmap/<int:traceId>/full/<int:bytes_per_sample>',
+           methods=['GET'])
+def memheatmap_full(traceId, bytes_per_sample):
     class MemoryRange:
         def __init__(self, start_address, end_address, dso_name):
             self.start_address = start_address
@@ -961,33 +961,28 @@ def memheatmap_full(traceId, plot_w, bytes_per_pixel):
             self.wss = 0
 
         def update_range_info(self):
-            bytes_per_line = bytes_per_pixel * plot_w
             self.start_address_aligned = closestAlignedValueTo(
                                                     self.start_address,
-                                                    bytes_per_line)
-            self.end_address_aligned = alignValueTo(self.end_address + 1,
-                                                    bytes_per_line) - 1
-            if self.start_address_aligned >= self.end_address_aligned:
-                raise Exception("Invalid start address: start: %d end: %d" % (
-                        self.start_address_aligned,
-                        self.end_address_aligned))
+                                                    bytes_per_sample)
+            self.end_address_aligned = alignValueTo(
+                                                    self.end_address,
+                                                    bytes_per_sample)
             self.byte_size = self.end_address - self.start_address + 1
             self.byte_size_aligned = self.end_address_aligned - \
                                      self.start_address_aligned + 1
-            self.pixel_count = self.byte_size_aligned // bytes_per_pixel
-            self.pixel_height = self.pixel_count // plot_w
-            self.data_raw = [0] * self.pixel_count
-            self.data_normalized = [0] * self.pixel_count
+            self.sample_count = self.byte_size_aligned // bytes_per_sample
+            self.data_raw = [0] * self.sample_count
+            self.data_normalized = [0] * self.sample_count
 
         def add_sample(self, ip, length, count):
-            if ip < self.start_address_aligned or ip > self.end_address_aligned:
+            if ip < self.start_address or ip > self.end_address:
                 raise Exception(
                             "Invalid IP %x for DSO: %s" % (ip, self.dso_name))
             start_address = ip - self.start_address_aligned
             end_address = (start_address + length) - 1
-            start_pix = start_address // bytes_per_pixel
-            end_pix = end_address // bytes_per_pixel
-            for pidx in range(start_pix, end_pix + 1):
+            start_sample = start_address // bytes_per_sample
+            end_sample = end_address // bytes_per_sample
+            for pidx in range(start_sample, end_sample + 1):
                 self.data_raw[pidx] += count
             self.wss += length
 
@@ -1023,11 +1018,7 @@ def memheatmap_full(traceId, plot_w, bytes_per_pixel):
                 "totalSize": self.byte_size,
                 "startAddressAligned": self.start_address_aligned,
                 "endAddressAligned": self.end_address_aligned,
-                "totalSizeAligned": self.byte_size_aligned,
-                "pixelCount": self.pixel_count,
-                "pixelHeight": self.pixel_height,
                 "dsoName": self.dso_name,
-                "bytesPerPixel": bytes_per_pixel,
                 "wss": self.wss,
                 "data": data
             }
@@ -1067,10 +1058,6 @@ def memheatmap_full(traceId, plot_w, bytes_per_pixel):
     address_ranges_list = sorted(address_ranges.values(),
                                  key=lambda x: x.start_address_aligned)
 
-    # Compute total chart height (sum of ranges' height)
-    total_pixel_h = sum(range.pixel_height for range in address_ranges_list) + \
-                    len(address_ranges_list) - 1
-
     # Add samples to ranges
     for row in rows:
         address_ranges[row[3]].add_sample(row[0], row[1], row[2])
@@ -1091,8 +1078,7 @@ def memheatmap_full(traceId, plot_w, bytes_per_pixel):
 
     # Create result data
     return jsonify({
-        "totalHeight": total_pixel_h,
-        "bytesPerPixel": bytes_per_pixel,
+        "bytesPerSample": bytes_per_sample,
         "ranges":
             [ar.to_dict(idx) for idx, ar in enumerate(address_ranges_list)]
         })
