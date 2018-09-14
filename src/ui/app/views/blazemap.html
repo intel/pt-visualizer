@@ -14,8 +14,29 @@
         <div class="separator"></div>
         <label>
             Show DSO:
-        </label>
         <select ng-disabled="heatmapLoading" ng-model="selectedDSO" ng-change="onUpdateDSO(selectedDSO)" ng-options="item as item.name for item in availableDSOs track by item.id"></select>
+        </label>
+        <div class="separator"></div>
+        <label>
+                Sample size
+        </label>
+        <label>
+        <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="1">
+        1x1
+        </label>
+        <label>
+        <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="2">
+        2x2
+        </label>
+        <label>
+        <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="3">
+        3x3
+        </label>
+        <label>
+        <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="4">
+        4x4
+        </label>
+    </label>
     </form>
 </div>
 <div class="row-fluid graph-container winm">

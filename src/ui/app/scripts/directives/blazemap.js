@@ -448,7 +448,8 @@
           this.minimapWindow = {
             active: false,
             parent: this,
-            scaleFactor: 0.1
+            scaleFactor: 0.1,
+            defaultScaleFactor: 0.1
           };
 
           this.minimapWindow.draw = function(ctx) {
@@ -476,6 +477,7 @@
           };
 
           this.minimapWindow.adjustScale = function() {
+            this.scaleFactor = this.defaultScaleFactor;
             var h = this.parent.backBuffer.height * this.scaleFactor;
             var maxHeight = this.parent.height * 0.65;
             if (h > maxHeight) {
@@ -568,10 +570,12 @@
           };
 
           this.onRangeSelected = function(range) {
-            if (this.selectedRange != range) {
+            if (this.selectedRange !== range) {
               this.selectedRange = range;
-              if (range != null) {
+              if (range !== null) {
                 this.setStatusInfo(this.formatRangeInfo(range));
+              } else {
+                this.setStatusInfo('');
               }
             }
           };
@@ -598,6 +602,12 @@
             if (y < 0 || y >= range.bounds.h) {
               return null;
             }
+            var width = this.getWidthInSamples();
+            x = Math.floor(x / scope.sampleSize);
+            y = Math.floor(y / scope.sampleSize);
+            if (x >= width) {
+              return null;
+            }
             var startX = x - ((w - 1) >> 1);
             var endX = startX + w;
             var startY = y + ((h - 1) >> 1);
@@ -607,14 +617,14 @@
             var hitCount = 0;
             var foundOne = false;
             for (var crtY = startY; crtY > endY; --crtY) {
-              var overIndexStart = crtY * this.width;
+              var overIndexStart = crtY * width;
               for (var crtX = startX; crtX < endX; ++crtX) {
                 var crtVal = -1;
                 var absVal = -1;
                 if (crtX >= 0 &&
                     crtY >= 0 &&
                     crtY < range.bounds.h &&
-                    crtX < this.width) {
+                    crtX < width) {
                   var overIndex = overIndexStart + crtX - range.idxCorrection;
                   if (overIndex in range.data) {
                     crtVal = range.data[overIndex][0];
@@ -647,7 +657,7 @@
               deltaValues = null;
             }
             var startAddress = range.displStartAddress +
-                               (y * this.width + x) * this.data.bytesPerSample;
+                               (y * width + x) * this.data.bytesPerSample;
             var endAddress = startAddress + this.data.bytesPerSample - 1;
             return {
               colorValues: arr,
@@ -781,18 +791,25 @@
 
           this.putPixelFromRGBA = function(imageData, offset, rgba, repeat) {
             while(repeat-- > 0) {
-              for (var channel = 0; channel < 4; channel++) {
+              for (var channel = 0; channel < 4; ++channel) {
                 imageData[offset + channel] = rgba[channel];
               }
               offset += 4;
             }
           };
 
-          this.putPixelFromValue = function(imageData, offset, val) {
-            var gradientOffset = (val << 2);
-            for (var channel = 0; channel < 4; channel++) {
-              imageData[offset + channel] =
-                this.colorGradient[gradientOffset + channel];
+          this.putPixelsFromValue = function(imageData, offset, val,
+                                             size, stride) {
+            var colorIndex = (val << 2);
+            var rgba = [
+              this.colorGradient[colorIndex],
+              this.colorGradient[colorIndex + 1],
+              this.colorGradient[colorIndex + 2],
+              this.colorGradient[colorIndex + 3],
+            ];
+            for (var line = 0; line < size; ++line) {
+              this.putPixelFromRGBA(imageData, offset, rgba, size);
+              offset -= stride;
             }
           };
 
@@ -825,24 +842,26 @@
                                               this.backBuffer.height);
             var imageData = imgObj.data;
 
-            var currentOffset = this.backBuffer.width *
-                                (this.backBuffer.height - 1);
+            var width = this.getWidthInSamples();
+            var imageStride = (this.backBuffer.width << 2);
+            var currentOffset = imageStride * (this.backBuffer.height - 1);
             ranges.forEach(function(range) {
               for (var idx in range.data) {
                 idx = parseInt(idx);
                 var targetIdx = idx + range.idxCorrection;
-                var xDispl = targetIdx % this.backBuffer.width;
-                var offset = currentOffset + xDispl;
-                if (targetIdx >= this.backBuffer.width) {
-                  offset -=  targetIdx - xDispl;
-                }
-                this.putPixelFromValue(
-                  imageData, (offset << 2), range.data[idx][0]);
+                var xDispl = targetIdx % width;
+                var yDispl = Math.floor(targetIdx / width);
+                xDispl *= (scope.sampleSize << 2);
+                yDispl *= (imageStride * scope.sampleSize);
+                var offset = (currentOffset - yDispl) + xDispl;
+                this.putPixelsFromValue(
+                  imageData, offset, range.data[idx][0],
+                  scope.sampleSize, imageStride);
               }
-              currentOffset -= range.sampleCount;
-              this.putPixelFromRGBA(imageData, (currentOffset << 2),
+              currentOffset -= (range.bounds.h * imageStride);
+              this.putPixelFromRGBA(imageData, currentOffset,
                                     this.gridColorRGBA, this.width);
-              currentOffset -= this.width;
+              currentOffset -= imageStride;
             }, this);
 
             drawCtx.putImageData(imgObj, 0, 0);
@@ -857,41 +876,30 @@
                 return a.index > b.index ? 1 : -1;});
           };
 
+          this.getWidthInSamples = function() {
+            return Math.floor(this.width / scope.sampleSize);
+          };
+
           this.updateRanges = function() {
             if (this.data === null) {
               return;
             }
-            var availableDSOs = [{ id: 0,
-                                   name: 'all',
-                                   range: null}];
-            this.data.ranges.forEach(function(range) {
-              var startSample = Math.floor(range.startAddressAligned /
-                                           scope.bytesPerSample);
-              var endSample = Math.floor(range.endAddress /
-                                         scope.bytesPerSample);
-              var alignedStartSample = closestAlignedValueTo(
-                                                  startSample, this.width);
-              var alignedEndSample = alignValueTo(endSample + 1,
-                                                  this.width) - 1;
-              range.idxCorrection = startSample - alignedStartSample;
-              range.sampleCount = alignedEndSample - alignedStartSample + 1;
-              range.displStartAddress = alignedStartSample *
-                                        scope.bytesPerSample;
-              range.displEndAddress = alignedEndSample *
-                                        scope.bytesPerSample - 1;
-              range.displSize = range.displEndAddress -
-                                range.displStartAddress + 1;
-              range.bounds = {h: Math.floor(range.sampleCount /
-                                            this.width),
-                              y: 0};
-              availableDSOs.push({ id: range.index + 1,
-                                   name: range.dsoName,
-                                   range: range});
-            }, this);
+            var availableDSOs = [{ id: -1,
+                                   name: 'all'}];
+            for (var idx = 0; idx < this.data.ranges.length; ++idx) {
+              availableDSOs.push({ id: idx,
+                                   name:  this.data.ranges[idx].dsoName});
+            }
 
             scope.availableDSOs = availableDSOs;
             scope.selectedDSO = scope.availableDSOs[0];
+            this.updateRangesForWidth(this.data.ranges,
+                                      this.getWidthInSamples());
           };
+
+          this.rangeFromID = function(id) {
+            return id >= 0 ? this.data.ranges[id] : null;
+          }
 
           this.updateRangesBounds = function(ranges) {
             if (ranges === null) {
@@ -909,6 +917,29 @@
               crtY -= (range.bounds.h + 1);
             });
             return totalHeight;
+          };
+
+          this.updateRangesForWidth = function(ranges, width) {
+            ranges.forEach(function(range) {
+              var startSample = Math.floor(range.startAddressAligned /
+                                           scope.bytesPerSample);
+              var endSample = Math.floor(range.endAddress /
+                                         scope.bytesPerSample);
+              var alignedStartSample = closestAlignedValueTo(
+                                                  startSample, width);
+              var alignedEndSample = alignValueTo(endSample + 1, width) - 1;
+              range.idxCorrection = startSample - alignedStartSample;
+              range.sampleCount = alignedEndSample - alignedStartSample + 1;
+              range.displStartAddress = alignedStartSample *
+                                        scope.bytesPerSample;
+              range.displEndAddress = alignedEndSample *
+                                        scope.bytesPerSample - 1;
+              range.displSize = range.displEndAddress -
+                                range.displStartAddress + 1;
+              range.bounds = {h: scope.sampleSize *
+                                 Math.floor(range.sampleCount / width),
+                              y: 0};
+            }, this);
           };
 
           this.resetTransform = function() {
@@ -933,6 +964,33 @@
             this.data = data;
             this.onDataUpdate();
           };
+
+          this.onUpdateDSO = function(value) {
+            this.onRangeHighlight(null);
+            this.onRangeSelected(this.rangeFromID(value.id));
+            if (this.selectedRange === null) {
+              this.updateBackbufferFromRanges(blazeMap.data.ranges);
+            } else {
+              this.updateBackbufferFromRanges([this.selectedRange]);
+            }
+            this.resetTransform();
+            this.minimapWindow.adjustScale();
+            this.updateDrawingSurface();
+          };
+
+          this.onUpdateSampleSize = function(value) {
+            this.onRangeHighlight(null);
+            this.updateRangesForWidth(this.data.ranges,
+                                      this.getWidthInSamples());
+            if (this.selectedRange === null) {
+              this.updateBackbufferFromRanges(this.data.ranges);
+            } else {
+              this.updateBackbufferFromRanges([this.selectedRange]);
+            }
+            this.resetTransform();
+            this.minimapWindow.adjustScale();
+            this.updateDrawingSurface();
+          };
       };
 
       var blazeCanvas = d3.select(element[0]).select('.blazemap');
@@ -942,6 +1000,7 @@
 
       scope.heatmapLoading = false;
       scope.bytesPerSample = 64;
+      scope.sampleSize = 1;
 
       var enableInputEvents = function() {
         blazeCanvas.on('mouseenter',
@@ -1025,16 +1084,11 @@
       };
 
       scope.onUpdateDSO = function(value) {
-        blazeMap.onRangeHighlight(null);
-        blazeMap.onRangeSelected(value.range);
-        if (value.range === null) {
-          blazeMap.updateBackbufferFromRanges(blazeMap.data.ranges);
-        } else {
-          blazeMap.updateBackbufferFromRanges([value.range]);
-        }
-        blazeMap.resetTransform();
-        blazeMap.minimapWindow.adjustScale();
-        blazeMap.updateDrawingSurface();
+        blazeMap.onUpdateDSO(value);
+      };
+
+      scope.onUpdateSampleSize = function(value) {
+        blazeMap.onUpdateSampleSize(value);
       };
 
       doRequest(64);
