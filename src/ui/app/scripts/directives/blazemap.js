@@ -24,6 +24,21 @@
           return canvas;
         };
 
+        var checkIfCanvasIsWritable = function(canvas) {
+          var color = "#FF00FF";
+          var drawCtx = canvas.getContext('2d');
+          var targetX = canvas.width - 2;
+          var targetY = canvas.height - 2;
+          drawCtx.fillStyle = color;
+          drawCtx.fillRect(targetX, targetY, 1, 1);
+          var imgObj = drawCtx.getImageData(targetX, targetY, 1, 1);
+          return imgObj !== null &&
+                 imgObj.data.length > 2 &&
+                 imgObj.data[0] === 255 &&
+                 imgObj.data[1] === 0 &&
+                 imgObj.data[2] === 255;
+        };
+
         var mergeObjects = function(one, two) {
           for (var key in two) {
             one[key] = two[key];
@@ -265,10 +280,8 @@
 
           this.cross.draw = function(ctx) {
             ctx.fillStyle = this.color;
-            ctx.beginPath();
             ctx.fillRect(0, this.y, ctx.canvas.width, 1);
             ctx.fillRect(this.x, 0, 1, ctx.canvas.height);
-            ctx.stroke();
           };
 
           this.focusedSample = {
@@ -820,11 +833,15 @@
                     this.colorGradient[gradientOffset + 2] + ')';
           };
 
-          this.updateBackbufferFromRanges = function(ranges) {
+          this.updateRangesBoundsAndCreateBBuffer = function(ranges) {
             var newHeight = this.updateRangesBounds(ranges);
             if (newHeight !== this.backBuffer.height) {
               this.backBuffer = createCanvas(this.width, newHeight);
             }
+            return (checkIfCanvasIsWritable(this.backBuffer));
+          };
+
+          this.updateBackbufferFromRanges = function(ranges) {
             var drawCtx = this.backBuffer.getContext('2d');
 
             drawCtx.fillStyle = this.config.heatmapColors[0];
@@ -899,7 +916,7 @@
 
           this.rangeFromID = function(id) {
             return id >= 0 ? this.data.ranges[id] : null;
-          }
+          };
 
           this.updateRangesBounds = function(ranges) {
             if (ranges === null) {
@@ -953,6 +970,8 @@
           this.onDataUpdate = function() {
             this.processData();
             this.updateRanges();
+            this.updateRangesBoundsAndCreateBBuffer(
+                                  this.data !== null ? this.data.ranges : null);
             this.updateBackbufferFromRanges(
                                   this.data !== null ? this.data.ranges : null);
             this.resetTransform();
@@ -965,33 +984,39 @@
             this.onDataUpdate();
           };
 
+          this.onUpdateDisplay = function() {
+            var ranges = this.selectedRange === null ? blazeMap.data.ranges :
+                        [this.selectedRange];
+            if (this.updateRangesBoundsAndCreateBBuffer(ranges) === true) {
+              this.updateBackbufferFromRanges(ranges);
+              this.resetTransform();
+              this.minimapWindow.adjustScale();
+              this.updateDrawingSurface();
+            } else {
+              if (scope.sampleSize > 1) {
+                _.defer(function() {
+                  scope.$apply(function() { scope.sampleSize = 1; });
+                  scope.onUpdateSampleSize(scope.sampleSize);
+                  window.alert('Unable to allocate a back-buffer' +
+                                ' for the requested size');
+                });
+              }
+            }
+          };
+
           this.onUpdateDSO = function(value) {
             this.onRangeHighlight(null);
             this.onRangeSelected(this.rangeFromID(value.id));
-            if (this.selectedRange === null) {
-              this.updateBackbufferFromRanges(blazeMap.data.ranges);
-            } else {
-              this.updateBackbufferFromRanges([this.selectedRange]);
-            }
-            this.resetTransform();
-            this.minimapWindow.adjustScale();
-            this.updateDrawingSurface();
+            this.onUpdateDisplay();
           };
 
           this.onUpdateSampleSize = function(value) {
             this.onRangeHighlight(null);
             this.updateRangesForWidth(this.data.ranges,
                                       this.getWidthInSamples());
-            if (this.selectedRange === null) {
-              this.updateBackbufferFromRanges(this.data.ranges);
-            } else {
-              this.updateBackbufferFromRanges([this.selectedRange]);
-            }
-            this.resetTransform();
-            this.minimapWindow.adjustScale();
-            this.updateDrawingSurface();
+            this.onUpdateDisplay();
           };
-      };
+        };
 
       var blazeCanvas = d3.select(element[0]).select('.blazemap');
       var blazeInfo = d3.select(element[0]).select('.blazeinfo');
@@ -1060,6 +1085,8 @@
           return;
         }
         scope.heatmapLoading = true;
+        scope.sampleSize = 1;
+        blazeMap.onRangeSelected(null);
         blazeMap.setStatusInfo('<b>Loading...</b>');
         disableInputEvents();
         $http(
