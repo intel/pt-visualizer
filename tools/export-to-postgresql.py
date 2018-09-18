@@ -477,10 +477,13 @@ def dso_table(dso_id, machine_id, short_name, long_name, build_id, *x):
 		jit_re = re.compile('jitted-[0-9]+-[0-9]+\.so')
 		if jit_re.match(short_name):
 			dso_ids.append(dso_id)
-			if len(dso_ids) > 1:
-				return;
-			dso_id = dso_ids[0]
-			short_name = "hhvm-jitted.so"
+			if len(dso_ids) == 1:
+				short_name = "hhvm-jitted.so"
+			elif len(dso_ids) == 2:
+				short_name = "hhvm-pcre.so"
+			else:
+				return
+			dso_id = dso_ids[-1]
 	n = len(short_name)
 	if n > 255:
 		n = 255
@@ -498,7 +501,10 @@ def symbol_table(symbol_id, dso_id, sym_start, sym_end, binding, symbol_name, *x
 		print datetime.datetime.today(), "Warning: Symbol name longer than max allowed by DB. Truncating"
 	if perf_collapse_jit_dsos:
 		if dso_id in dso_ids:
-			dso_id = dso_ids[0]
+			if symbol_name.startswith('HHVM::pcre_jit'):
+				dso_id = dso_ids[1]
+			else:
+				dso_id = dso_ids[0]
 	fmt = "!hiiihi" + str(n) + "s" + "iqiq"
 	value = struct.pack(fmt, 5, 4, symbol_id, 2, dso_id, n, symbol_name, 8, sym_start, 8, sym_end)
 	symbol_file.write(value)

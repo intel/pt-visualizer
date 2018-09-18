@@ -25,4 +25,5 @@ fi
 $perf_binary record -m 512,100000 -e intel_pt/mtc_period=3/u -T     \
                     --pid "$HHVM_PID" -o "$out_dir"/perf.data       \
                      wget --no-proxy http://localhost:8090/index.php?title=Main_Page
+wget -O -  --no-proxy http://localhost:8093/vm-tcaddr > "$out_dir"/jit_regions.txt 2> /dev/null
 $perf_binary inject --jit -i "$out_dir"/perf.data -o "$out_dir"/perf.jitted.data
