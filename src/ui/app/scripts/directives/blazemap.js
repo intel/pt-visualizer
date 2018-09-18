@@ -25,7 +25,7 @@
         };
 
         var checkIfCanvasIsWritable = function(canvas) {
-          var color = "#FF00FF";
+          var color = '#FF00FF';
           var drawCtx = canvas.getContext('2d');
           var targetX = canvas.width - 2;
           var targetY = canvas.height - 2;
@@ -65,6 +65,11 @@
           return Math.abs(a - b) < 0.0000000001;
         };
 
+        var distanceBetweenSq = function(x1, y1, x2, y2) {
+          var xDiff = x2 - x1;
+          var yDiff = y2 - y1;
+          return (xDiff * xDiff) + (yDiff * yDiff);
+        };
 
         var alignValueTo = function(val, to) {
           if (val === 0) { return to; }
@@ -407,9 +412,9 @@
 
           this.symAtAddrRequest.update = function(startAddress, endAddress) {
             if (this.currentStartAddr !== startAddress) {
+              this.pendingStartAddr = startAddress;
+              this.pendingEndAddr = endAddress;
               if (this.requestActive) {
-                this.pendingStartAddr = startAddress;
-                this.pendingEndAddr = endAddress;
                 if (startAddress !== -1) {
                   this.updateSymbolsList(['...']);
                 } else {
@@ -417,7 +422,6 @@
                 }
               } else {
                 this.currentStartAddr = startAddress;
-                this.pendingStartAddr = startAddress;
                 if (startAddress !== -1) {
                   this.doRequest(startAddress, endAddress);
                 } else {
@@ -440,8 +444,8 @@
               })
               .success(function(respdata/*, status, headers, config*/) {
                 if (self.pendingStartAddr === self.currentStartAddr) {
-                  self.updateSymbolsList(respdata.length > 0 ? respdata : null);
                   self.requestActive = false;
+                  self.updateSymbolsList(respdata.length > 0 ? respdata : null);
                 } else {
                   var start = self.pendingStartAddr;
                   var end = self.pendingEndAddr;
@@ -450,12 +454,83 @@
                     self.doRequest(start, end);
                   } else {
                     self.requestActive = false;
+                    self.updateSymbolsList(null);
                   }
                 }
               })
               .error(function(data, status, headers, config) {
-                console.log('Error retrieving full symbols: ', status);
+                self.requestActive = false;
+                self.updateSymbolsList(null);
+                console.log('Error retrieving symbols at addr: ', status);
             });
+          };
+
+          this.symAtAddrFullRequest = {
+            currentStartAddr: -1,
+            pendingStartAddr: -1,
+            pendingEndAddr: -1,
+            requestActive: false
+          };
+
+          this.symAtAddrFullRequest.startRequest = function(req) {
+            var startAddress = req.pendingStartAddr;
+            var endAddress = req.pendingEndAddr;
+            if (startAddress !== -1 && startAddress !== this.currentStartAddr) {
+              this.pendingStartAddr = startAddress;
+              this.pendingEndAddr = endAddress;
+              if (!this.requestActive) {
+                this.currentStartAddr = startAddress;
+                this.doRequest(startAddress, endAddress);
+              }
+            }
+          };
+
+          this.symAtAddrFullRequest.updateSymbolsList = function(data) {
+            data.forEach(function(item) {
+              item.instructions.forEach(function(instr) {
+                instr.ipFormatted = addressToString(instr.ip);
+              });
+            });
+            _.defer(function() {
+              scope.$apply(function() {
+                scope.symbolsFullInfo = data;
+              });
+            });
+          };
+
+          this.symAtAddrFullRequest.doRequest = function(startAddress,
+                                                         endAddress) {
+            this.requestActive = true;
+            var self = this;
+            $http(
+              {
+                method: 'GET',
+                url: '/api/1/symbolsataddrfull/' + $routeParams.traceID +
+                     '/' + startAddress + '/' +
+                     endAddress,
+                cache: true
+              })
+            .success(function(respdata/*, status, headers, config*/) {
+              if (self.pendingStartAddr === self.currentStartAddr) {
+                self.requestActive = false;
+                self.updateSymbolsList(respdata.length > 0 ? respdata : null);
+              } else {
+                var start = self.pendingStartAddr;
+                var end = self.pendingEndAddr;
+                self.currentStartAddr = start;
+                if (start !== -1) {
+                  self.doRequest(start, end);
+                } else {
+                  self.requestActive = false;
+                  self.updateSymbolsList(null);
+                }
+              }
+            })
+            .error(function(data, status, headers, config) {
+              self.requestActive = false;
+              self.updateSymbolsList(null);
+              console.log('Error retrieving full symbols at addr: ', status);
+           });
           };
 
           this.minimapWindow = {
@@ -730,6 +805,25 @@
           };
 
           this.onMouseMove = function(x, y, shiftKey) {
+            if (this.mouseDownInfo.time > 0 && this.dragInfo.active === false)
+            {
+              if (distanceBetweenSq(this.mouseDownInfo.x,
+                                    this.mouseDownInfo.y,
+                                    x,
+                                    y) >= 9) { // (3 pixels)
+                if (this.dragEnabled()) {
+                  this.dragInfo.active = true;
+                  this.dragInfo.lastX = x;
+                  this.dragInfo.lastY = y;
+                  this.minimapWindow.active = true;
+                  this.onMouseLeave(x, y);
+                }
+                this.mouseDownInfo.canClick = false;
+              } else {
+                return;
+              }
+            }
+
             if (this.dragInfo.active) {
                 var deltaX = x - this.dragInfo.lastX;
                 var deltaY = y - this.dragInfo.lastY;
@@ -760,6 +854,20 @@
                    this.transform.width !== this.width;
           };
 
+          this.mouseDownInfo = {
+            x: 0,
+            y: 0,
+            time: -1,
+            canClick: false
+          };
+
+          this.mouseDownInfo.reset = function() {
+            this.x = 0;
+            this.y = 0;
+            this.time = -1;
+            this.canClick = false;
+          };
+
           this.onMouseEnter = function(x, y) {
             if (this.dragInfo.active) {
               this.dragInfo.lastX = x;
@@ -781,18 +889,27 @@
           };
 
           this.onMouseDown = function(x, y) {
-            if (this.dragEnabled()) {
-              this.dragInfo.active = true;
-              this.dragInfo.lastX = x;
-              this.dragInfo.lastY = y;
-              this.minimapWindow.active = true;
-              this.onMouseLeave(x, y);
-            }
+            this.mouseDownInfo.x = x;
+            this.mouseDownInfo.y = y;
+            this.mouseDownInfo.time = (new Date()).getMilliseconds();
+            this.mouseDownInfo.canClick = true;
           };
 
           this.onMouseUp = function(x, y) {
-            this.dragInfo.active = false;
-            this.minimapWindow.active = false;
+            if (this.mouseDownInfo.canClick === true) {
+              var timeMS = (new Date()).getMilliseconds();
+              if (timeMS - this.mouseDownInfo.time < 1500) {
+                this.onClick(x, y);
+              }
+            } else {
+              this.dragInfo.active = false;
+              this.minimapWindow.active = false;
+            }
+            this.mouseDownInfo.reset();
+          };
+
+          this.onClick = function(x, y) {
+            this.symAtAddrFullRequest.startRequest(this.symAtAddrRequest);
           };
 
           this.onZoom = function(zoomIn, x, y) {
@@ -1044,14 +1161,16 @@
                         function() {
                           var coords = d3.mouse(this);
                           blazeMap.onMouseMove(coords[0], coords[1],
-                                              d3.event.shiftKey);
+                                               d3.event.shiftKey);
                       });
 
         blazeCanvas.on('mousedown',
                         function() {
                           var coords = d3.mouse(this);
                           if (d3.event.target.setPointerCapture) {
-                            d3.event.target.setPointerCapture(1);
+                            d3.event.target.setPointerCapture(
+                                typeof d3.event.mozInputSource === 'undefined' ?
+                                1 : null);
                           } else if (d3.event.target.setCapture) {
                             d3.event.target.setCapture();
                           }
@@ -1069,6 +1188,7 @@
                           var coords = d3.mouse(this);
                           blazeMap.onZoom(d3.event.deltaY < 0, coords[0],
                                           coords[1]);
+                          d3.event.preventDefault();
                       });
       };
 

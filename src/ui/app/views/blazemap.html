@@ -56,3 +56,25 @@
         </ul>
     </div>
 </div>
+<div class="row-fluid">
+    <div ng-if="symbolsFullInfo" class="symbolsFullInfo" style="width: 1400px;">
+        <div ng-repeat="item in symbolsFullInfo">
+            <div class="symbolsFullInfoHeader">
+                {{item.symbol}}
+            </div>
+            <table class="symbolsFullInfoTable">
+                <tr ng-repeat="instr in item.instructions">
+                    <td>
+                        {{instr.ipFormatted}}
+                    </td>
+                    <td>
+                        {{instr.instr}}
+                    </td>
+                    <td>
+                           x {{instr.count}}
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</div>

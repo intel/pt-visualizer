@@ -20,6 +20,8 @@ import psycopg2.extras
 import datetime
 import math
 import simplejson as json
+import subprocess
+import re
 from operator import itemgetter
 from flask import Flask, request, jsonify, send_file, abort
 from werkzeug import secure_filename
@@ -1139,6 +1141,44 @@ def symbols_at_addr(traceId, start_addr, end_addr):
                 ".instructions_view where ip >= " + str(start_addr) +
                 " and ip <= " + str(end_addr))
     return jsonify([elem[0] for elem in cur.fetchall()])
+
+#
+# Get symbols names + assembly found between two addresses
+#
+instr_extr = re.compile('SHORT: (.*)')
+
+@app.route('/api/1/symbolsataddrfull/<int:traceId>/<int:start_addr>/'
+           '<int:end_addr>', methods=['GET'])
+def symbols_at_addr_full(traceId, start_addr, end_addr):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select symbol_name, opcode, exec_count, ip from " + schema +
+                ".instructions_view where ip >= " + str(start_addr) +
+                " and ip <= " + str(end_addr) +
+                " order by symbol_name, ip;")
+    result_data = {}
+    for elem in cur.fetchall():
+        if elem[0] not in result_data:
+            result_data[elem[0]] = {
+                "symbol": elem[0],
+                "instructions": []
+            }
+        instr_string = ["%0.2X" % (ord(b)) for b in elem[1]]
+        result = subprocess.check_output(["xed", "-64", "-d"] + instr_string,
+                 stderr=subprocess.STDOUT)
+        decoded_instr = "unknown"
+        if result:
+            for line in result.splitlines():
+                res = instr_extr.match(line)
+                if res:
+                    decoded_instr = res.group(1)
+                    break
+        result_data[elem[0]]["instructions"].append({
+                                                "instr": decoded_instr,
+                                                "count": elem[2],
+                                                "ip": elem[3]})
+    return jsonify(result_data.values())
+
 
 
 if __name__ == '__main__':

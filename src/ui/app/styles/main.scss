@@ -643,3 +643,33 @@ canvas {
   line-height: 16px;
   font-family: sans-serif;
 }
+
+.symbolsFullInfo {
+  margin: 0px 0px 0px 5px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.symbolsFullInfoHeader {
+  margin: 2px 0px 0px 0px;
+  padding: 5px;
+  font-weight: bold;
+  background-color: darkslateblue;
+  color: white;
+}
+
+.symbolsFullInfoTable {
+  min-width: 1000px;
+  margin: 0px 0px 0px 10px;
+}
+
+.symbolsFullInfoTable td {
+  padding: 0px 5px 0px 5px;
+}
+
+.symbolsFullInfoTable tr:nth-child(2n) {
+  background-color: #cccccc;
+}
+.symbolsFullInfoTable tr:nth-child(2n + 1) {
+  background-color: #bbbbbb;
+}
