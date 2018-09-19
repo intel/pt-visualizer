@@ -301,6 +301,7 @@ do_query(query, 'CREATE TABLE instructions ('
 		'symbol_id	integer,'
 		'ip			bigint,'
 		'exec_count	integer,'
+		'sym_offset	bigint,'
 		'opcode		bytea)')
 do_query(query, 'CREATE TABLE symbols ('
 		'id			integer		NOT NULL,'
@@ -342,6 +343,7 @@ do_query(query, 'CREATE VIEW instructions_view AS '
 		'(SELECT dso_id FROM symbols WHERE symbols.id = symbol_id)) AS dso_name,'
 		'instructions.ip,'
 		'instructions.exec_count,'
+		'instructions.sym_offset,'
 		'instructions.opcode'
 		' FROM instructions')
 
@@ -514,7 +516,7 @@ def branch_type_table(branch_type, name, *x):
 
 def sample_table(sample_id, evsel_id, machine_id, tid, comm_id, dso_id, symbol_id, sym_offset, ip, time, cpu, to_dso_id, to_symbol_id, to_sym_offset, to_ip, period, weight, transaction, data_src, branch_type, in_tx, call_path_id, insn, *x):
 	instr_id = get_instruction_id(ip)
-	instr_dict_insert(instr_id, symbol_id, ip, insn)
+	instr_dict_insert(instr_id, symbol_id, ip, insn, sym_offset)
 	fmt = "!hiiihiqiiii"
 	value = struct.pack(fmt, 5, 4, sample_id, 2, cpu, 8, time, 4, instr_id, 4, tid)
 	sample_file.write(value)
@@ -532,7 +534,8 @@ def instruction_table():
 		instr_id = ip_dict[ip]["id"]
 		symbol_id = ip_dict[ip]["symbol_id"]
 		exec_count = ip_dict[ip]["exec_count"]
-		value.extend(struct.pack("!hiiiiiqiii", 5, 4, instr_id, 4, symbol_id, 8, ip, 4, exec_count, opcode_len))
+		sym_offset = ip_dict[ip]["sym_offset"]
+		value.extend(struct.pack("!hiiiiiqiiiqi", 6, 4, instr_id, 4, symbol_id, 8, ip, 4, exec_count, 8, sym_offset, opcode_len))
 		value.extend(ip_dict[ip]["opcode"])
 		instr_file.write(value)
 
@@ -547,10 +550,11 @@ def get_instruction_id(ip):
 		ip_dict[ip]["exec_count"] = -1
 		return instr_id
 
-def instr_dict_insert(instr_id, symbol_id, ip, opcode):
+def instr_dict_insert(instr_id, symbol_id, ip, opcode, sym_offset):
 	if ip_dict[ip]["exec_count"] > -1:
 		ip_dict[ip]["exec_count"] += 1
 	else:
 		ip_dict[ip]["exec_count"] = 1
 		ip_dict[ip]["symbol_id"] = symbol_id
 		ip_dict[ip]["opcode"] = opcode
+		ip_dict[ip]["sym_offset"] = sym_offset
