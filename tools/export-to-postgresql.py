@@ -240,10 +240,11 @@ def usage():
 if (len(sys.argv) < 2):
 	usage()
 else:
-	if sys.argv[2] != 'collapse-jit-dsos':
-		usage()
-	else:
-		perf_collapse_jit_dsos = True
+	if len(sys.argv) > 2:
+		if sys.argv[2] != 'collapse-jit-dsos':
+			usage()
+		else:
+			perf_collapse_jit_dsos = True
 
 dbname = 'sat'
 dbuser = 'sat'
@@ -315,6 +316,10 @@ do_query(query, 'CREATE TABLE samples ('
 		'time			bigint,'
 		'instruction_id	integer,'
 		'thread_id		integer)')
+do_query(query, 'CREATE TABLE dso_jumps ('
+		'id				integer		NOT NULL,'
+		'time			bigint,'
+		'instruction_id	integer)')
 
 do_query(query, 'CREATE VIEW samples_view AS '
 	'SELECT '
@@ -346,6 +351,16 @@ do_query(query, 'CREATE VIEW instructions_view AS '
 		'instructions.sym_offset,'
 		'instructions.opcode'
 		' FROM instructions')
+do_query(query, 'CREATE VIEW dso_jumps_view AS '
+	'SELECT '
+		'dso_jumps.id,'
+		'dso_jumps.time,'
+		'(SELECT name FROM symbols WHERE symbols.id = '
+			'(SELECT symbol_id from instructions WHERE instructions.id = instruction_id)) AS symbol,'
+		'(SELECT name FROM dsos WHERE dsos.id = '
+			'(SELECT dso_id FROM symbols WHERE symbols.id = '
+				'(SELECT symbol_id FROM instructions WHERE instructions.id = instruction_id))) AS dso_name'
+		' FROM dso_jumps')
 
 
 file_header = struct.pack("!11sii", "PGCOPY\n\377\r\n\0", 0, 0)
@@ -402,10 +417,14 @@ dso_file		= open_output_file("dso_table.bin")
 instr_file		= open_output_file("instr_table.bin")
 symbol_file		= open_output_file("symbol_table.bin")
 sample_file		= open_output_file("sample_table.bin")
+dso_jump_file	= open_output_file("dso_jump_table.bin")
 
 # dictionary containing instruction stats, where ip is key
 ip_dict = {}
 dso_ids = []
+pcre_dso_ids = []
+dso_jump_dict = {}
+prev_sample = {}
 
 def trace_begin():
 	print datetime.datetime.today(), "Writing to intermediate files..."
@@ -415,6 +434,7 @@ unhandled_count = 0
 def trace_end():
 	print datetime.datetime.today(), "Writing instructions summary to file..."
 	instruction_table()
+	dso_jump_table()
 
 	print datetime.datetime.today(), "Copying to database..."
 	copy_output_file(thread_file,		"threads")
@@ -423,6 +443,7 @@ def trace_end():
 	copy_output_file(symbol_file,		"symbols")
 	copy_output_file(sample_file,		"samples")
 	copy_output_file(thread_file,		"threads")
+	copy_output_file(dso_jump_file,		"dso_jumps")
 
 	print datetime.datetime.today(), "Removing intermediate files..."
 	remove_output_file(thread_file)
@@ -430,6 +451,7 @@ def trace_end():
 	remove_output_file(instr_file)
 	remove_output_file(symbol_file)
 	remove_output_file(sample_file)
+	remove_output_file(dso_jump_file)
 	os.rmdir(output_dir_name)
 	print datetime.datetime.today(), "Adding primary keys"
 	do_query(query, 'ALTER TABLE threads         ADD PRIMARY KEY (tid)')
@@ -437,15 +459,18 @@ def trace_end():
 	do_query(query, 'ALTER TABLE instructions    ADD PRIMARY KEY (id)')
 	do_query(query, 'ALTER TABLE symbols         ADD PRIMARY KEY (id)')
 	do_query(query, 'ALTER TABLE samples         ADD PRIMARY KEY (id)')
+	do_query(query, 'ALTER TABLE dso_jumps       ADD PRIMARY KEY (id)')
 
 	print datetime.datetime.today(), "Adding foreign keys"
 	do_query(query, 'ALTER TABLE symbols '
-					'ADD CONSTRAINT dsofk      FOREIGN KEY (dso_id)         REFERENCES dsos       (id)')
+					'ADD CONSTRAINT dsofk		FOREIGN KEY (dso_id)			REFERENCES dsos			(id)')
 	do_query(query, 'ALTER TABLE instructions '
-					'ADD CONSTRAINT symfk	   FOREIGN KEY (symbol_id)	    REFERENCES symbols		(id)')
+					'ADD CONSTRAINT symfk		FOREIGN KEY (symbol_id)			REFERENCES symbols		(id)')
 	do_query(query, 'ALTER TABLE samples '
-					'ADD CONSTRAINT threadfk   FOREIGN KEY (thread_id)      REFERENCES threads      (tid),'
-					'ADD CONSTRAINT instrfk    FOREIGN KEY (instruction_id) REFERENCES instructions (id)')
+					'ADD CONSTRAINT threadfk	FOREIGN KEY (thread_id)			REFERENCES threads		(tid),'
+					'ADD CONSTRAINT instrfk		FOREIGN KEY (instruction_id)	REFERENCES instructions	(id)')
+	do_query(query, 'ALTER TABLE dso_jumps '
+					'ADD CONSTRAINT instrjumpfk	FOREIGN KEY (instruction_id)	REFERENCES instructions	(id)')
 
 	if (unhandled_count):
 		print datetime.datetime.today(), "Warning: ", unhandled_count, " unhandled events"
@@ -504,6 +529,7 @@ def symbol_table(symbol_id, dso_id, sym_start, sym_end, binding, symbol_name, *x
 	if perf_collapse_jit_dsos:
 		if dso_id in dso_ids:
 			if symbol_name.startswith('HHVM::pcre_jit'):
+				pcre_dso_ids.append(dso_id)
 				dso_id = dso_ids[1]
 			else:
 				dso_id = dso_ids[0]
@@ -517,6 +543,7 @@ def branch_type_table(branch_type, name, *x):
 def sample_table(sample_id, evsel_id, machine_id, tid, comm_id, dso_id, symbol_id, sym_offset, ip, time, cpu, to_dso_id, to_symbol_id, to_sym_offset, to_ip, period, weight, transaction, data_src, branch_type, in_tx, call_path_id, insn, *x):
 	instr_id = get_instruction_id(ip)
 	instr_dict_insert(instr_id, symbol_id, ip, insn, sym_offset)
+	dso_jump_dict_insert(instr_id, dso_id, time)
 	fmt = "!hiiihiqiiii"
 	value = struct.pack(fmt, 5, 4, sample_id, 2, cpu, 8, time, 4, instr_id, 4, tid)
 	sample_file.write(value)
@@ -539,6 +566,14 @@ def instruction_table():
 		value.extend(ip_dict[ip]["opcode"])
 		instr_file.write(value)
 
+def dso_jump_table():
+	for id in dso_jump_dict:
+		value = bytearray()
+		instr_id = dso_jump_dict[id]["instr_id"]
+		time = dso_jump_dict[id]["time"]
+		value.extend(struct.pack("!hiiiqii", 3, 4, id, 8, time, 4, instr_id))
+		dso_jump_file.write(value)
+
 def get_instruction_id(ip):
 	if ip in ip_dict:
 		return ip_dict[ip]["id"]
@@ -558,3 +593,24 @@ def instr_dict_insert(instr_id, symbol_id, ip, opcode, sym_offset):
 		ip_dict[ip]["symbol_id"] = symbol_id
 		ip_dict[ip]["opcode"] = opcode
 		ip_dict[ip]["sym_offset"] = sym_offset
+
+def dso_jump_dict_add_entry(time, instr_id):
+	id = len(dso_jump_dict) + 1
+	dso_jump_dict[id] = {}
+	dso_jump_dict[id]["time"] = time
+	dso_jump_dict[id]["instr_id"] = instr_id
+
+def dso_jump_dict_insert(instr_id, dso_id, time):
+	actual_dso_id = dso_id
+	if perf_collapse_jit_dsos:
+		if dso_id in pcre_dso_ids:
+			actual_dso_id = dso_ids[1]
+		elif dso_id in dso_ids:
+			actual_dso_id = dso_ids[0]
+	if len(prev_sample) > 0 and actual_dso_id != prev_sample["dso_id"]:
+		dso_jump_dict_add_entry(prev_sample["time"], prev_sample["instr_id"])
+		dso_jump_dict_add_entry(time, instr_id)
+	# update prev_sample
+	prev_sample["time"] = time
+	prev_sample["instr_id"] = instr_id
+	prev_sample["dso_id"] = actual_dso_id
