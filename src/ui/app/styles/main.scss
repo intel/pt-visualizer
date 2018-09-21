@@ -650,6 +650,32 @@ canvas {
   font-family: monospace;
 }
 
+.symbolsFullInfoMainHeader {
+  font-size: 14px;
+  margin-top: 2px;
+  border-style: solid;
+  border-color: black;
+  border-width: 1px 0px 1px 0px;
+  display: block;
+  position: relative;
+  height: 90px;
+  background-color: white;
+}
+
+.symbolsFullInfoMainHeader div {
+  display: block;
+  position: absolute;
+  bottom: 0px;
+  left: 100px;
+}
+
+.symbolsFullInfoMainHeader canvas {
+  position: absolute;
+  bottom: 0px;
+  left: 0px;
+  display: block;
+}
+
 .symbolsFullInfoHeader {
   margin: 2px 0px 0px 0px;
   padding: 5px;

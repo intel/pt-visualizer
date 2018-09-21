@@ -108,6 +108,15 @@
           return new Uint8Array([colorObj.r, colorObj.g, colorObj.b, alpha]);
         };
 
+        var putPixelFromRGBA = function(imageData, offset, rgba, repeat) {
+          while(repeat-- > 0) {
+            for (var channel = 0; channel < 4; ++channel) {
+              imageData[offset + channel] = rgba[channel];
+            }
+            offset += 4;
+          }
+        };
+
         var createColorGradientSegment = function(startColor, endColor,
                                                   gradArray, index, length) {
           var start = intToRGB(parseHTMLColor(startColor));
@@ -159,22 +168,33 @@
           var remaining = len - str.length;
           if (remaining > 0) {
             var appendOne = '';
-            var toAppend = chr;
+            var toAppend = '';
             if ((remaining & 1) === 1) {
               appendOne = chr;
               remaining -= 1;
             }
-            while(remaining > 1) {
-              toAppend = toAppend + toAppend;
-              remaining >>= 1;
+            if (remaining > 1) {
+              toAppend = chr;
+              while(remaining > 1) {
+                toAppend = toAppend + toAppend;
+                remaining >>= 1;
+              }
             }
             return appendOne + toAppend + str;
           }
           return str;
         };
 
-        var addressToString = function(address) {
-          return '0x' + padStringStart(address.toString(16), '0', 16);
+        var addressToString = function(address, length) {
+          length = (typeof length !== 'undefined') ? length : 16;
+          return '0x' + padStringStart(address.toString(16), '0', length);
+        };
+
+        var symbolOffsetToString = function(symbol, offset) {
+          if (symbol.length > 32) {
+            symbol = symbol.substring(0, 29) + '...';
+          }
+          return symbol + '+' + addressToString(offset, 4);
         };
 
         var formatAddrRange = function(stringOne, stringTwo) {
@@ -467,33 +487,148 @@
 
           this.symAtAddrFullRequest = {
             currentStartAddr: -1,
+            currentEndAddr: -1,
             pendingStartAddr: -1,
             pendingEndAddr: -1,
-            requestActive: false
+            requestActive: false,
+            loadingTimer: null,
+            previewData: null,
+            previewW: 9,
+            previewH: 9,
+            parent: this
           };
 
-          this.symAtAddrFullRequest.startRequest = function(req) {
+          this.symAtAddrFullRequest.doLoadingAnim = function() {
+            var self = this;
+            this.loadingTimer = window.setInterval(function() {
+              if (self.requestActive === false) {
+                return;
+              }
+              var loadingCanvas = d3.select(element[0])
+                                  .select('.symbolsFullInfoPrev').node();
+              if (loadingCanvas === null) {
+                return;
+              }
+              var ctx = loadingCanvas.getContext('2d');
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, loadingCanvas.width,
+                               loadingCanvas.height);
+              var imgObj = ctx.getImageData(0, 0, loadingCanvas.width,
+                                            loadingCanvas.height);
+              var imageData = imgObj.data;
+              var offset = Math.floor(Math.random() * 10);
+              var length = loadingCanvas.width * loadingCanvas.height - 5;
+              while (offset < length) {
+                putPixelFromRGBA(imageData, offset << 2, [0, 0, 0, 255],
+                                 2 + Math.floor(Math.random() * 3));
+                offset += 5 + Math.floor(Math.random() * 10);
+              }
+              ctx.putImageData(imgObj, 0, 0);
+            }, 30);
+          };
+
+          this.symAtAddrFullRequest.updateSymbolsPreview = function() {
+            if (this.previewData === null) {
+              return;
+            }
+            var previewCanvas = d3.select(element[0])
+                                .select('.symbolsFullInfoPrev').node();
+            if (previewCanvas === null) {
+              return;
+            }
+            var ctx = previewCanvas.getContext('2d');
+            ctx.fillStyle = this.parent.config.gridColor;
+            ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+            var cellW = Math.floor(previewCanvas.width / this.previewW);
+            var cellH = Math.floor(previewCanvas.height / this.previewH);
+            var crtX = 0;
+            var crtY = 0;
+            var crtCell = 0;
+            for (var row = 0; row < this.previewH; ++row) {
+              for (var col = 0; col < this.previewW; ++col, ++crtCell) {
+                if (this.previewData.colorValues[crtCell] !== -1) {
+                  ctx.fillStyle = this.parent.getRGBStringFromGradient(
+                                        this.previewData.colorValues[crtCell]);
+                  ctx.fillRect(crtX, crtY, cellW, cellH);
+                }
+                crtX += cellW;
+              }
+              crtX = 0;
+              crtY += cellH;
+            }
+            var midX = cellW * ((this.previewW - 1) >> 1);
+            var midY = cellH * ((this.previewH - 1) >> 1);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.strokeStyle = '#FF2040';
+            ctx.rect(midX, midY, cellW, cellH);
+            ctx.stroke();
+            var crossW = midX;
+            var crossH = midY;
+            var x = midX + (cellW >> 1);
+            var y = midY + (cellH >> 1);
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fillRect(0, y, crossW, 1);
+            ctx.fillRect(crossW + cellW + 1, y, crossW, 1);
+            ctx.fillRect(x, 0, 1, crossH);
+            ctx.fillRect(x, crossH + cellH + 1, 1, crossH);
+          };
+
+          this.symAtAddrFullRequest.stopLoadingAnim = function() {
+            if (this.loadingTimer !== null) {
+              window.clearInterval(this.loadingTimer);
+              this.loadingTimer = null;
+            }
+          };
+
+          this.symAtAddrFullRequest.startRequest = function(req, x, y, range) {
             var startAddress = req.pendingStartAddr;
             var endAddress = req.pendingEndAddr;
             if (startAddress !== -1 && startAddress !== this.currentStartAddr) {
+              scope.symbolsFullInfo.visible = true;
+              var logical = this.parent.transform.toLogicalCoords(x, y);
+              this.previewData = this.parent.retrievePointsAround(
+                                                  logical[0], logical[1],
+                                                  this.previewW, this.previewH,
+                                                  range);
               this.pendingStartAddr = startAddress;
               this.pendingEndAddr = endAddress;
               if (!this.requestActive) {
                 this.currentStartAddr = startAddress;
+                this.currentEndAddr = endAddress;
                 this.doRequest(startAddress, endAddress);
               }
             }
           };
 
+          this.symAtAddrFullRequest.formatSummary = function(data) {
+            return '<b>' + addressToString(this.currentStartAddr) +
+                   '</b> - <b>' + addressToString(this.currentEndAddr) +
+                   '</b> Total Hits: <b>' + data.totalHits + '</b>';
+          };
+
           this.symAtAddrFullRequest.updateSymbolsList = function(data) {
-            data.forEach(function(item) {
-              item.instructions.forEach(function(instr) {
-                instr.ipFormatted = addressToString(instr.ip);
+            if (data !== null) {
+              data.summary = this.formatSummary(data);
+              data.symbols.forEach(function(item) {
+                item.visible = false;
+                item.instructions.forEach(function(instr) {
+                  instr.offsetFormatted = symbolOffsetToString(item.symbol,
+                                                               instr.offset);
+                });
               });
-            });
+            } else {
+              data = {
+                summary: '...',
+                symbols: null
+              };
+            }
+            if (data.symbols !== null) {
+              this.updateSymbolsPreview();
+            }
             _.defer(function() {
               scope.$apply(function() {
-                scope.symbolsFullInfo = data;
+                mergeObjects(scope.symbolsFullInfo, data);
               });
             });
           };
@@ -501,6 +636,8 @@
           this.symAtAddrFullRequest.doRequest = function(startAddress,
                                                          endAddress) {
             this.requestActive = true;
+            this.doLoadingAnim();
+            this.updateSymbolsList(null);
             var self = this;
             $http(
               {
@@ -513,21 +650,26 @@
             .success(function(respdata/*, status, headers, config*/) {
               if (self.pendingStartAddr === self.currentStartAddr) {
                 self.requestActive = false;
-                self.updateSymbolsList(respdata.length > 0 ? respdata : null);
+                self.stopLoadingAnim();
+                self.updateSymbolsList(respdata.symbols.length > 0 ?
+                                       respdata : null);
               } else {
                 var start = self.pendingStartAddr;
                 var end = self.pendingEndAddr;
                 self.currentStartAddr = start;
+                self.currentEndAddr = end;
                 if (start !== -1) {
                   self.doRequest(start, end);
                 } else {
                   self.requestActive = false;
+                  self.stopLoadingAnim();
                   self.updateSymbolsList(null);
                 }
               }
             })
             .error(function(data, status, headers, config) {
               self.requestActive = false;
+              self.stopLoadingAnim();
               self.updateSymbolsList(null);
               console.log('Error retrieving full symbols at addr: ', status);
            });
@@ -680,7 +822,7 @@
           this.setStatusInfo = function(text) {
             _.defer(function() {
               scope.$apply(function() {
-                scope.blazeInfo = sce.trustAsHtml(text);
+                scope.blazeInfo = text;
               });
             });
           };
@@ -909,22 +1051,14 @@
           };
 
           this.onClick = function(x, y) {
-            this.symAtAddrFullRequest.startRequest(this.symAtAddrRequest);
+            this.symAtAddrFullRequest.startRequest(this.symAtAddrRequest,
+                                                   x, y, this.getActiveRange());
           };
 
           this.onZoom = function(zoomIn, x, y) {
             if (this.transform.zoom(zoomIn, this, x, y)) {
               this.minimapWindow.active = true;
               this.onMouseLeave(x, y);
-            }
-          };
-
-          this.putPixelFromRGBA = function(imageData, offset, rgba, repeat) {
-            while(repeat-- > 0) {
-              for (var channel = 0; channel < 4; ++channel) {
-                imageData[offset + channel] = rgba[channel];
-              }
-              offset += 4;
             }
           };
 
@@ -938,7 +1072,7 @@
               this.colorGradient[colorIndex + 3],
             ];
             for (var line = 0; line < size; ++line) {
-              this.putPixelFromRGBA(imageData, offset, rgba, size);
+              putPixelFromRGBA(imageData, offset, rgba, size);
               offset -= stride;
             }
           };
@@ -993,7 +1127,7 @@
                   scope.sampleSize, imageStride);
               }
               currentOffset -= (range.bounds.h * imageStride);
-              this.putPixelFromRGBA(imageData, currentOffset,
+              putPixelFromRGBA(imageData, currentOffset,
                                     this.gridColorRGBA, this.width);
               currentOffset -= imageStride;
             }, this);
@@ -1143,6 +1277,11 @@
       scope.heatmapLoading = false;
       scope.bytesPerSample = 64;
       scope.sampleSize = 1;
+      scope.symbolsFullInfo = {
+        visible: false,
+        summary: '',
+        symbols: null
+      };
 
       var enableInputEvents = function() {
         blazeCanvas.on('mouseenter',
@@ -1236,6 +1375,10 @@
 
       scope.onUpdateSampleSize = function(value) {
         blazeMap.onUpdateSampleSize(value);
+      };
+
+      scope.trustAsHtml = function(str) {
+        return sce.trustAsHtml(str);
       };
 
       doRequest(64);

@@ -1,7 +1,7 @@
 <div class="row-fluid">
     <form class="heatmapoptions">
         <label>
-            Bytes per pixel
+            Bytes per sample
         </label>
         <label>
             <input type="radio" name="bps" ng-disabled="heatmapLoading" ng-model="bytesPerSample" ng-change="onUpdateBpp(bytesPerSample)" value="64">
@@ -18,23 +18,23 @@
         </label>
         <div class="separator"></div>
         <label>
-                Sample size
+            Sample size
         </label>
         <label>
         <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="1">
-        1x1
+            1x1
         </label>
         <label>
         <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="2">
-        2x2
+            2x2
         </label>
         <label>
         <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="3">
-        3x3
+            3x3
         </label>
         <label>
         <input type="radio" name="samps" ng-disabled="heatmapLoading" ng-model="sampleSize" ng-change="onUpdateSampleSize(sampleSize)" value="4">
-        4x4
+            4x4
         </label>
     </label>
     </form>
@@ -46,7 +46,7 @@
     <canvas id="blaze-{{id}}" class="blazemap" width="1400" height="500" style="width: 1400px; height: 500px;"></canvas>
 </div>
 <div class="row-fluid">
-    <div class="blazeinfo" style="width: 1400px;" ng-bind-html="blazeInfo"></div>
+    <div class="blazeinfo" style="width: 1400px;" ng-bind-html="trustAsHtml(blazeInfo)"></div>
 </div>
 <div class="row-fluid">
     <div style="margin-left: 5px;" ng-if="symbolsForCrtSample">
@@ -57,21 +57,31 @@
     </div>
 </div>
 <div class="row-fluid">
-    <div ng-if="symbolsFullInfo" class="symbolsFullInfo" style="width: 1400px;">
-        <div ng-repeat="item in symbolsFullInfo">
-            <div class="symbolsFullInfoHeader">
+    <div ng-if="symbolsFullInfo.visible" class="symbolsFullInfo" style="width: 1400px;">
+        <div class="symbolsFullInfoMainHeader">
+            <canvas class="symbolsFullInfoPrev" width="90" height="90" style="width: 90px; height: 90px"></canvas>
+            <div ng-bind-html="trustAsHtml(symbolsFullInfo.summary)">
+            </div>
+        </div>
+        <div ng-repeat="item in symbolsFullInfo.symbols">
+            <div class="symbolsFullInfoHeader" ng-click="item.visible=!item.visible">
                 {{item.symbol}}
             </div>
-            <table class="symbolsFullInfoTable">
+            <table class="symbolsFullInfoTable" ng-if="item.visible">
                 <tr ng-repeat="instr in item.instructions">
                     <td>
-                        {{instr.ipFormatted}}
+                        {{instr.offsetFormatted}}
+                    </td>
+                    <td>
+                        {{instr.length}}B
                     </td>
                     <td>
                         {{instr.instr}}
                     </td>
                     <td>
-                           x {{instr.count}}
+                        x {{instr.count}}
+                    </td>
+                    <td>
                     </td>
                 </tr>
             </table>

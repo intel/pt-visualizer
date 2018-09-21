@@ -1152,11 +1152,13 @@ instr_extr = re.compile('SHORT: (.*)')
 def symbols_at_addr_full(traceId, start_addr, end_addr):
     cur, named_cur = begin_db_request()
     schema = "pt" + str(traceId)
-    cur.execute("select symbol_name, opcode, exec_count, ip from " + schema +
-                ".instructions_view where ip >= " + str(start_addr) +
+    cur.execute("select symbol_name, opcode, exec_count, ip, sym_offset, "
+                "octet_length(opcode) from " +
+                schema + ".instructions_view where ip >= " + str(start_addr) +
                 " and ip <= " + str(end_addr) +
                 " order by symbol_name, ip;")
     result_data = {}
+    total_exec_count = 0
     for elem in cur.fetchall():
         if elem[0] not in result_data:
             result_data[elem[0]] = {
@@ -1176,8 +1178,12 @@ def symbols_at_addr_full(traceId, start_addr, end_addr):
         result_data[elem[0]]["instructions"].append({
                                                 "instr": decoded_instr,
                                                 "count": elem[2],
-                                                "ip": elem[3]})
-    return jsonify(result_data.values())
+                                                "ip": elem[3],
+                                                "offset": elem[4],
+                                                "length": elem[5]})
+        total_exec_count += elem[2]
+    return jsonify({"totalHits": total_exec_count,
+                    "symbols": result_data.values()})
 
 
 
