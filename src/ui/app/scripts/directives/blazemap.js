@@ -946,6 +946,15 @@
             this.drawOverlays(drawCtx);
           };
 
+          this.enableDragMode = function(enabled, x, y) {
+            this.dragInfo.active = enabled;
+            this.minimapWindow.active = enabled;
+            if (enabled) {
+              this.dragInfo.lastX = x;
+              this.dragInfo.lastY = y;
+            }
+          };
+
           this.onMouseMove = function(x, y, shiftKey) {
             if (this.mouseDownInfo.time > 0 && this.dragInfo.active === false)
             {
@@ -954,10 +963,7 @@
                                     x,
                                     y) >= 9) { // (3 pixels)
                 if (this.dragEnabled()) {
-                  this.dragInfo.active = true;
-                  this.dragInfo.lastX = x;
-                  this.dragInfo.lastY = y;
-                  this.minimapWindow.active = true;
+                  this.enableDragMode(true, x, y);
                   this.onMouseLeave(x, y);
                 }
                 this.mouseDownInfo.canClick = false;
@@ -1035,6 +1041,7 @@
             this.mouseDownInfo.y = y;
             this.mouseDownInfo.time = (new Date()).getMilliseconds();
             this.mouseDownInfo.canClick = true;
+            this.enableDragMode(false);
           };
 
           this.onMouseUp = function(x, y) {
@@ -1044,8 +1051,7 @@
                 this.onClick(x, y);
               }
             } else {
-              this.dragInfo.active = false;
-              this.minimapWindow.active = false;
+              this.enableDragMode(false);
             }
             this.mouseDownInfo.reset();
           };
