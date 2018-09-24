@@ -295,31 +295,33 @@ do_query(query, 'CREATE TABLE threads ('
 		'tid		integer		NOT NULL,'
 		'pid		integer)')
 do_query(query, 'CREATE TABLE dsos ('
-		'id		smallint		NOT NULL,'
+		'id	smallint		NOT NULL,'
 		'name	varchar(256))')
 do_query(query, 'CREATE TABLE instructions ('
-		'id			integer		NOT NULL,'
+		'id		integer		NOT NULL,'
 		'symbol_id	integer,'
-		'ip			bigint,'
+		'ip		bigint,'
 		'exec_count	integer,'
 		'sym_offset	bigint,'
 		'opcode		bytea)')
 do_query(query, 'CREATE TABLE symbols ('
-		'id			integer		NOT NULL,'
+		'id		integer		NOT NULL,'
 		'dso_id		smallint,'
 		'name		varchar(256),'
 		'sym_start	bigint,'
 		'sym_end	bigint)')
 do_query(query, 'CREATE TABLE samples ('
-		'id				integer		NOT NULL,'
+		'id			integer		NOT NULL,'
 		'cpu_id			smallint,'
 		'time			bigint,'
 		'instruction_id	integer,'
 		'thread_id		integer)')
 do_query(query, 'CREATE TABLE dso_jumps ('
-		'id				integer		NOT NULL,'
-		'time			bigint,'
-		'instruction_id	integer)')
+		'id			integer		NOT NULL,'
+		'from_time		bigint,'
+		'from_instruction_id	integer,'
+		'to_time		bigint,'
+		'to_instruction_id	integer)')
 
 do_query(query, 'CREATE VIEW samples_view AS '
 	'SELECT '
@@ -354,12 +356,18 @@ do_query(query, 'CREATE VIEW instructions_view AS '
 do_query(query, 'CREATE VIEW dso_jumps_view AS '
 	'SELECT '
 		'dso_jumps.id,'
-		'dso_jumps.time,'
+		'dso_jumps.from_time,'
 		'(SELECT name FROM symbols WHERE symbols.id = '
-			'(SELECT symbol_id from instructions WHERE instructions.id = instruction_id)) AS symbol,'
+			'(SELECT symbol_id from instructions WHERE instructions.id = from_instruction_id)) AS from_symbol,'
 		'(SELECT name FROM dsos WHERE dsos.id = '
 			'(SELECT dso_id FROM symbols WHERE symbols.id = '
-				'(SELECT symbol_id FROM instructions WHERE instructions.id = instruction_id))) AS dso_name'
+				'(SELECT symbol_id FROM instructions WHERE instructions.id = from_instruction_id))) AS from_dso_name,'
+		'dso_jumps.to_time,'
+		'(SELECT name FROM symbols WHERE symbols.id = '
+			'(SELECT symbol_id from instructions WHERE instructions.id = to_instruction_id)) AS to_symbol,'
+		'(SELECT name FROM dsos WHERE dsos.id = '
+			'(SELECT dso_id FROM symbols WHERE symbols.id = '
+				'(SELECT symbol_id FROM instructions WHERE instructions.id = to_instruction_id))) AS to_dso_name'
 		' FROM dso_jumps')
 
 
@@ -417,7 +425,7 @@ dso_file		= open_output_file("dso_table.bin")
 instr_file		= open_output_file("instr_table.bin")
 symbol_file		= open_output_file("symbol_table.bin")
 sample_file		= open_output_file("sample_table.bin")
-dso_jump_file	= open_output_file("dso_jump_table.bin")
+dso_jump_file		= open_output_file("dso_jump_table.bin")
 
 # dictionary containing instruction stats, where ip is key
 ip_dict = {}
@@ -470,7 +478,8 @@ def trace_end():
 					'ADD CONSTRAINT threadfk	FOREIGN KEY (thread_id)			REFERENCES threads		(tid),'
 					'ADD CONSTRAINT instrfk		FOREIGN KEY (instruction_id)	REFERENCES instructions	(id)')
 	do_query(query, 'ALTER TABLE dso_jumps '
-					'ADD CONSTRAINT instrjumpfk	FOREIGN KEY (instruction_id)	REFERENCES instructions	(id)')
+					'ADD CONSTRAINT instrjumpfromfk	FOREIGN KEY (from_instruction_id)	REFERENCES instructions	(id),'
+					'ADD CONSTRAINT instrjumptofk	FOREIGN KEY (to_instruction_id)		REFERENCES instructions	(id)')
 
 	if (unhandled_count):
 		print datetime.datetime.today(), "Warning: ", unhandled_count, " unhandled events"
@@ -569,9 +578,11 @@ def instruction_table():
 def dso_jump_table():
 	for id in dso_jump_dict:
 		value = bytearray()
-		instr_id = dso_jump_dict[id]["instr_id"]
-		time = dso_jump_dict[id]["time"]
-		value.extend(struct.pack("!hiiiqii", 3, 4, id, 8, time, 4, instr_id))
+		from_instr_id = dso_jump_dict[id]["from_instr_id"]
+		from_time = dso_jump_dict[id]["from_time"]
+		to_instr_id = dso_jump_dict[id]["to_instr_id"]
+		to_time = dso_jump_dict[id]["to_time"]
+		value.extend(struct.pack("!hiiiqiiiqii", 5, 4, id, 8, from_time, 4, from_instr_id, 8, to_time, 4, to_instr_id))
 		dso_jump_file.write(value)
 
 def get_instruction_id(ip):
@@ -594,11 +605,13 @@ def instr_dict_insert(instr_id, symbol_id, ip, opcode, sym_offset):
 		ip_dict[ip]["opcode"] = opcode
 		ip_dict[ip]["sym_offset"] = sym_offset
 
-def dso_jump_dict_add_entry(time, instr_id):
+def dso_jump_dict_add_entry(from_time, from_instr_id, to_time, to_instr_id):
 	id = len(dso_jump_dict) + 1
 	dso_jump_dict[id] = {}
-	dso_jump_dict[id]["time"] = time
-	dso_jump_dict[id]["instr_id"] = instr_id
+	dso_jump_dict[id]["from_time"] = from_time
+	dso_jump_dict[id]["from_instr_id"] = from_instr_id
+	dso_jump_dict[id]["to_time"] = to_time
+	dso_jump_dict[id]["to_instr_id"] = to_instr_id
 
 def dso_jump_dict_insert(instr_id, dso_id, time):
 	actual_dso_id = dso_id
@@ -608,8 +621,7 @@ def dso_jump_dict_insert(instr_id, dso_id, time):
 		elif dso_id in dso_ids:
 			actual_dso_id = dso_ids[0]
 	if len(prev_sample) > 0 and actual_dso_id != prev_sample["dso_id"]:
-		dso_jump_dict_add_entry(prev_sample["time"], prev_sample["instr_id"])
-		dso_jump_dict_add_entry(time, instr_id)
+		dso_jump_dict_add_entry(prev_sample["time"], prev_sample["instr_id"], time, instr_id)
 	# update prev_sample
 	prev_sample["time"] = time
 	prev_sample["instr_id"] = instr_id
