@@ -341,7 +341,6 @@ do_query(query, 'CREATE VIEW samples_view AS '
 	' FROM samples'
 	' LEFT JOIN instructions '
 		'ON instructions.id = samples.instruction_id')
-
 do_query(query, 'CREATE VIEW instructions_view AS '
 	'SELECT '
 		'instructions.id,'
@@ -362,12 +361,16 @@ do_query(query, 'CREATE VIEW dso_jumps_view AS '
 		'(SELECT name FROM dsos WHERE dsos.id = '
 			'(SELECT dso_id FROM symbols WHERE symbols.id = '
 				'(SELECT symbol_id FROM instructions WHERE instructions.id = from_instruction_id))) AS from_dso_name,'
+		'(SELECT dso_id FROM symbols WHERE symbols.id = '
+			'(SELECT symbol_id FROM instructions WHERE instructions.id = from_instruction_id)) AS from_dso_id,'
 		'dso_jumps.to_time,'
 		'(SELECT name FROM symbols WHERE symbols.id = '
 			'(SELECT symbol_id from instructions WHERE instructions.id = to_instruction_id)) AS to_symbol,'
 		'(SELECT name FROM dsos WHERE dsos.id = '
 			'(SELECT dso_id FROM symbols WHERE symbols.id = '
-				'(SELECT symbol_id FROM instructions WHERE instructions.id = to_instruction_id))) AS to_dso_name'
+				'(SELECT symbol_id FROM instructions WHERE instructions.id = to_instruction_id))) as to_dso_name,'
+		'(SELECT dso_id FROM symbols WHERE symbols.id = '
+			'(SELECT symbol_id FROM instructions WHERE instructions.id = to_instruction_id)) AS to_dso_id'
 		' FROM dso_jumps')
 
 
@@ -446,7 +449,7 @@ def trace_end():
 
 	print datetime.datetime.today(), "Copying to database..."
 	copy_output_file(thread_file,		"threads")
-	copy_output_file(dso_file,			"dsos")
+	copy_output_file(dso_file,		"dsos")
 	copy_output_file(instr_file,		"instructions")
 	copy_output_file(symbol_file,		"symbols")
 	copy_output_file(sample_file,		"samples")
