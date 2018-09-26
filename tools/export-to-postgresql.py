@@ -234,7 +234,7 @@ perf_db_export_callchains = False
 perf_collapse_jit_dsos = False
 
 def usage():
-	print >> sys.stderr, "Usage is: export-to-postgresql.py <database name> [collapse-jit-dsos]"
+	print >> sys.stderr, "Usage is: export-to-postgresql.py <database name> [collapse-jit-dsos]  [all/branches] [calls]"
 	raise Exception("Wrong usage")
 
 if (len(sys.argv) < 2):
@@ -245,6 +245,24 @@ else:
 			usage()
 		else:
 			perf_collapse_jit_dsos = True
+
+if (len(sys.argv) >= 4):
+	columns = sys.argv[3]
+else:
+	columns = "all"
+
+if columns not in ("all", "branches"):
+	usage()
+
+branches = (columns == "branches")
+
+for i in range(4,len(sys.argv)):
+	if (sys.argv[i] == "calls"):
+		perf_db_export_calls = True
+	elif (sys.argv[i] == "callchains"):
+		perf_db_export_callchains = True
+	else:
+		usage()
 
 dbname = 'sat'
 dbuser = 'sat'
