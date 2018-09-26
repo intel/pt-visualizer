@@ -334,6 +334,23 @@ do_query(query, 'CREATE TABLE samples ('
 		'time			bigint,'
 		'instruction_id	integer,'
 		'thread_id		integer)')
+if perf_db_export_calls or perf_db_export_callchains:
+	do_query(query, 'CREATE TABLE call_paths ('
+		'id             integer         NOT NULL,'
+		'parent_id      integer,'
+		'symbol_id      integer,'
+		'ip             bigint)')
+if perf_db_export_calls:
+	do_query(query, 'CREATE TABLE calls ('
+		'id             integer         NOT NULL,'
+		'call_path_id   integer,'
+		'call_time      bigint,'
+		'return_time    bigint,'
+		'branch_count   integer,'
+		'call_id        integer,'
+		'return_id      integer,'
+		'parent_call_path_id    integer,'
+		'flags          integer)')
 do_query(query, 'CREATE TABLE dso_jumps ('
 		'id			integer		NOT NULL,'
 		'from_time		bigint,'
@@ -370,6 +387,41 @@ do_query(query, 'CREATE VIEW instructions_view AS '
 		'instructions.sym_offset,'
 		'instructions.opcode'
 		' FROM instructions')
+if perf_db_export_calls or perf_db_export_callchains:
+	do_query(query, 'CREATE VIEW call_paths_view AS '
+		'SELECT '
+			'c.id,'
+			'to_hex(c.ip) AS ip,'
+			'c.symbol_id,'
+			'(SELECT name FROM symbols WHERE id = c.symbol_id) AS symbol,'
+			'(SELECT dso_id FROM symbols WHERE id = c.symbol_id) AS dso_id,'
+			'(SELECT name FROM dsos WHERE dsos.id = '
+				'(SELECT dso_id FROM symbols WHERE symbols.id = c.symbol_id)) AS dso_name,'
+			'c.parent_id,'
+			'to_hex(p.ip) AS parent_ip,'
+			'p.symbol_id AS parent_symbol_id,'
+			'(SELECT name FROM symbols WHERE id = p.symbol_id) AS parent_symbol,'
+			'(SELECT dso_id FROM symbols WHERE id = p.symbol_id) AS parent_dso_id,'
+			'(SELECT name FROM dsos WHERE dsos.id = '
+				'(SELECT dso_id FROM symbols WHERE symbols.id = p.symbol_id)) AS parent_dso_name'
+			' FROM call_paths c INNER JOIN call_paths p ON p.id = c.parent_id')
+if perf_db_export_calls:
+	do_query(query, 'CREATE VIEW calls_view AS '
+		'SELECT '
+			'calls.id,'
+			'call_path_id,'
+			'to_hex(ip) AS ip,'
+			'symbol_id,'
+			'(SELECT name FROM symbols WHERE id = symbol_id) AS symbol,'
+			'call_time,'
+			'return_time,'
+			'return_time - call_time AS elapsed_time,'
+			'branch_count,'
+			'call_id,'
+			'return_id,'
+			'CASE WHEN flags=1 THEN \'no call\' WHEN flags=2 THEN \'no return\' WHEN flags=3 THEN \'no call/return\' ELSE \'\' END AS flags,'
+			'parent_call_path_id'
+		' FROM calls INNER JOIN call_paths ON call_paths.id = call_path_id')
 do_query(query, 'CREATE VIEW dso_jumps_view AS '
 	'SELECT '
 		'dso_jumps.id,'
@@ -447,7 +499,10 @@ instr_file		= open_output_file("instr_table.bin")
 symbol_file		= open_output_file("symbol_table.bin")
 sample_file		= open_output_file("sample_table.bin")
 dso_jump_file		= open_output_file("dso_jump_table.bin")
-
+if perf_db_export_calls or perf_db_export_callchains:
+	call_path_file          = open_output_file("call_path_table.bin")
+if perf_db_export_calls:
+	 call_file               = open_output_file("call_table.bin")
 # dictionary containing instruction stats, where ip is key
 ip_dict = {}
 dso_ids = []
@@ -457,7 +512,11 @@ prev_sample = {}
 
 def trace_begin():
 	print datetime.datetime.today(), "Writing to intermediate files..."
-
+	thread_table(0, 0, 0, -1, -1)
+	dso_table(0, 0, "unknown", "unknown", "")
+	symbol_table(0, 0, 0, 0, 0, "unknown")
+	if perf_db_export_calls or perf_db_export_callchains:
+		call_path_table(0, 0, 0, 0)
 unhandled_count = 0
 
 def trace_end():
@@ -473,7 +532,11 @@ def trace_end():
 	copy_output_file(sample_file,		"samples")
 	copy_output_file(thread_file,		"threads")
 	copy_output_file(dso_jump_file,		"dso_jumps")
-
+	if perf_db_export_calls or perf_db_export_callchains:
+		copy_output_file(call_path_file,        "call_paths")
+	if perf_db_export_calls:
+		copy_output_file(call_file,             "calls")
+ 
 	print datetime.datetime.today(), "Removing intermediate files..."
 	remove_output_file(thread_file)
 	remove_output_file(dso_file)
@@ -481,7 +544,11 @@ def trace_end():
 	remove_output_file(symbol_file)
 	remove_output_file(sample_file)
 	remove_output_file(dso_jump_file)
-	os.rmdir(output_dir_name)
+	if perf_db_export_calls or perf_db_export_callchains:
+		remove_output_file(call_path_file)
+	if perf_db_export_calls:
+		remove_output_file(call_file)
+ 	os.rmdir(output_dir_name)
 	print datetime.datetime.today(), "Adding primary keys"
 	do_query(query, 'ALTER TABLE threads         ADD PRIMARY KEY (tid)')
 	do_query(query, 'ALTER TABLE dsos            ADD PRIMARY KEY (id)')
@@ -489,6 +556,10 @@ def trace_end():
 	do_query(query, 'ALTER TABLE symbols         ADD PRIMARY KEY (id)')
 	do_query(query, 'ALTER TABLE samples         ADD PRIMARY KEY (id)')
 	do_query(query, 'ALTER TABLE dso_jumps       ADD PRIMARY KEY (id)')
+	if perf_db_export_calls or perf_db_export_callchains:
+		do_query(query, 'ALTER TABLE call_paths      ADD PRIMARY KEY (id)')
+	if perf_db_export_calls:
+		do_query(query, 'ALTER TABLE calls           ADD PRIMARY KEY (id)')
 
 	print datetime.datetime.today(), "Adding foreign keys"
 	do_query(query, 'ALTER TABLE symbols '
@@ -501,8 +572,18 @@ def trace_end():
 	do_query(query, 'ALTER TABLE dso_jumps '
 					'ADD CONSTRAINT instrjumpfromfk	FOREIGN KEY (from_instruction_id)	REFERENCES instructions	(id),'
 					'ADD CONSTRAINT instrjumptofk	FOREIGN KEY (to_instruction_id)		REFERENCES instructions	(id)')
-
-	if (unhandled_count):
+	if perf_db_export_calls or perf_db_export_callchains:
+		do_query(query, 'ALTER TABLE call_paths '
+					'ADD CONSTRAINT parentfk    FOREIGN KEY (parent_id)    REFERENCES call_paths (id),'
+					'ADD CONSTRAINT symbolfk    FOREIGN KEY (symbol_id)    REFERENCES symbols    (id)')
+	if perf_db_export_calls:
+		do_query(query, 'ALTER TABLE calls '
+					'ADD CONSTRAINT call_pathfk FOREIGN KEY (call_path_id) REFERENCES call_paths (id),'
+					'ADD CONSTRAINT callfk      FOREIGN KEY (call_id)      REFERENCES samples    (id),'
+					'ADD CONSTRAINT returnfk    FOREIGN KEY (return_id)    REFERENCES samples    (id),'
+					'ADD CONSTRAINT parent_call_pathfk FOREIGN KEY (parent_call_path_id) REFERENCES call_paths (id)')
+		do_query(query, 'CREATE INDEX pcpid_idx ON calls (parent_call_path_id)')
+  	if (unhandled_count):
 		print datetime.datetime.today(), "Warning: ", unhandled_count, " unhandled events"
 	print datetime.datetime.today(), "Done"
 
@@ -579,10 +660,15 @@ def sample_table(sample_id, evsel_id, machine_id, tid, comm_id, dso_id, symbol_i
 	sample_file.write(value)
 
 def call_path_table(cp_id, parent_id, symbol_id, ip, *x):
-	pass
+	fmt = "!hiiiiiiiq"
+	value = struct.pack(fmt, 4, 4, cp_id, 4, parent_id, 4, symbol_id, 8, ip)
+	call_path_file.write(value)
 
 def call_return_table(cr_id, thread_id, comm_id, call_path_id, call_time, return_time, branch_count, call_id, return_id, parent_call_path_id, flags, *x):
-	pass
+	fmt = "!hiiiiiqiqiiiiiiiiii"
+	if return_id != 0:
+		value = struct.pack(fmt, 9, 4, cr_id, 4, call_path_id, 8, call_time, 8, return_time, 4, branch_count, 4, call_id, 4, return_id, 4, parent_call_path_id, 4, flags)
+		call_file.write(value)
 
 def instruction_table():
 	for ip in ip_dict:
