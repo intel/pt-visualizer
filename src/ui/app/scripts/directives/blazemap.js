@@ -1283,6 +1283,7 @@
       scope.heatmapLoading = false;
       scope.bytesPerSample = 64;
       scope.sampleSize = 1;
+      scope.traceID = $routeParams.traceID;
       scope.symbolsFullInfo = {
         visible: false,
         summary: '',

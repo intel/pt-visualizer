@@ -166,6 +166,12 @@ def trace_id(id):
     return app.send_static_file('index.html')
 
 
+@app.route('/transitiongraph/<int:id>',
+           methods=['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])
+def transitiongraph(id):
+    return app.send_static_file('index.html')
+
+
 @app.route('/admin/views/admin/<string:endpoint>', methods=['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])
 def admin_view(endpoint):
     print '/views/admin/' + endpoint
@@ -1186,6 +1192,62 @@ def symbols_at_addr_full(traceId, start_addr, end_addr):
                     "symbols": result_data.values()})
 
 
+@app.route('/api/1/alldsos/<int:traceId>', methods=['GET'])
+def get_all_dsos(traceId):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select id, name from " + schema + ".dsos order by name")
+    return jsonify([{"id": item[0],
+                     "name": item[1]} for item in cur.fetchall()])
+
+
+@app.route('/api/1/dsotransitions/<int:traceId>/<int:one>/<int:two>',
+           methods=['GET'])
+def get_dsos_jumps(traceId, one, two):
+    cur, named_cur = begin_db_request()
+    schema = "pt" + str(traceId)
+    cur.execute("select from_time, from_symbol, from_dso_name, from_dso_id,"
+                " to_time, to_symbol, to_dso_name, to_dso_id from " + schema +
+                ".dso_jumps_view where (from_dso_id = " + str(one) +
+                " and to_dso_id = " + str(two) + ") or (from_dso_id = " +
+                str(two) + " and to_dso_id = " + str(one) +
+                ") order by from_time")
+    one_symbols = []
+    two_symbols = []
+    one_dict = {}
+    two_dict = {}
+    one_name = None
+    two_name = None
+    result_dict = {}
+    def get_idx(dct, lst, sym):
+        if sym not in dct:
+            lst.append(sym)
+            idx = len(lst) - 1
+            dct[sym] = idx
+            return idx
+        else:
+            return dct[sym]
+    for item in cur.fetchall():
+        reverse = one == item[7]
+        if one_name is None:
+            one_name = item[2] if not reverse else item[6]
+        if two_name is None:
+            two_name = item[6] if not reverse else item[2]
+        src = item[1] if not reverse else item[5]
+        src_idx = get_idx(one_dict, one_symbols, src)
+        dest = item[5] if not reverse else item[1]
+        dest_idx = get_idx(two_dict, two_symbols, dest)
+        if (src_idx, dest_idx) not in result_dict:
+            result_dict[(src_idx, dest_idx)] = [1, 0] if not reverse else [0, 1]
+        else:
+            dir_idx = 0 if not reverse else 1
+            result_dict[(src_idx, dest_idx)][dir_idx] += 1
+    return jsonify({"symbolsLeft": one_symbols,
+                    "symbolsRight": two_symbols,
+                    "edges" : [{"left": k[0],
+                                "right": k[1],
+                                "count": result_dict[k]}
+                                for k in result_dict]})
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5005)
