@@ -67,7 +67,8 @@ def get_db():
         g._database = psycopg2.connect(
             dbname=status.getDbConfig('dbname'),
             user=status.getDbConfig('user'),
-            password=status.getDbConfig('password'))
+            password=status.getDbConfig('password'),
+            host='zero-bdx-hhvm.jf.intel.com')
         g._database.autocommit = True
     return g._database
 
@@ -1221,7 +1222,9 @@ def get_dsos_jumps(traceId, one, two):
     result_dict = {}
     def get_idx(dct, lst, sym):
         if sym not in dct:
-            lst.append(sym)
+            lst.append({ "name": sym,
+                         "in": 0,
+                         "out": 0})
             idx = len(lst) - 1
             dct[sym] = idx
             return idx
@@ -1242,6 +1245,12 @@ def get_dsos_jumps(traceId, one, two):
         else:
             dir_idx = 0 if not reverse else 1
             result_dict[(src_idx, dest_idx)][dir_idx] += 1
+        if reverse:
+            one_symbols[src_idx]["in"] += 1
+            two_symbols[dest_idx]["out"] += 1
+        else:
+            one_symbols[src_idx]["out"] += 1
+            two_symbols[dest_idx]["in"] += 1
     return jsonify({"symbolsLeft": one_symbols,
                     "symbolsRight": two_symbols,
                     "edges" : [{"left": k[0],
