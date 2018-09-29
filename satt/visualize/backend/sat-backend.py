@@ -67,8 +67,7 @@ def get_db():
         g._database = psycopg2.connect(
             dbname=status.getDbConfig('dbname'),
             user=status.getDbConfig('user'),
-            password=status.getDbConfig('password'),
-            host='zero-bdx-hhvm.jf.intel.com')
+            password=status.getDbConfig('password'))
         g._database.autocommit = True
     return g._database
 
