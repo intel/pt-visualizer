@@ -264,6 +264,9 @@
                   onClick(i);
                 });
 
+              cells.append('title')
+                .text(function(item) { return item.name; });
+
               cells.append('rect')
                 .attr('x', -(self.boxW >> 1))
                 .attr('y', -(self.boxH >> 1))
