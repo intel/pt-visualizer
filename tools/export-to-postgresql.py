@@ -351,12 +351,6 @@ if perf_db_export_calls:
 		'return_id      integer,'
 		'parent_call_path_id    integer,'
 		'flags          integer)')
-do_query(query, 'CREATE TABLE dso_jumps ('
-		'id			integer		NOT NULL,'
-		'from_time		bigint,'
-		'from_instruction_id	integer,'
-		'to_time		bigint,'
-		'to_instruction_id	integer)')
 
 do_query(query, 'CREATE VIEW samples_view AS '
 	'SELECT '
@@ -422,26 +416,6 @@ if perf_db_export_calls:
 			'CASE WHEN flags=1 THEN \'no call\' WHEN flags=2 THEN \'no return\' WHEN flags=3 THEN \'no call/return\' ELSE \'\' END AS flags,'
 			'parent_call_path_id'
 		' FROM calls INNER JOIN call_paths ON call_paths.id = call_path_id')
-do_query(query, 'CREATE VIEW dso_jumps_view AS '
-	'SELECT '
-		'dso_jumps.id,'
-		'dso_jumps.from_time,'
-		'(SELECT name FROM symbols WHERE symbols.id = '
-			'(SELECT symbol_id from instructions WHERE instructions.id = from_instruction_id)) AS from_symbol,'
-		'(SELECT name FROM dsos WHERE dsos.id = '
-			'(SELECT dso_id FROM symbols WHERE symbols.id = '
-				'(SELECT symbol_id FROM instructions WHERE instructions.id = from_instruction_id))) AS from_dso_name,'
-		'(SELECT dso_id FROM symbols WHERE symbols.id = '
-			'(SELECT symbol_id FROM instructions WHERE instructions.id = from_instruction_id)) AS from_dso_id,'
-		'dso_jumps.to_time,'
-		'(SELECT name FROM symbols WHERE symbols.id = '
-			'(SELECT symbol_id from instructions WHERE instructions.id = to_instruction_id)) AS to_symbol,'
-		'(SELECT name FROM dsos WHERE dsos.id = '
-			'(SELECT dso_id FROM symbols WHERE symbols.id = '
-				'(SELECT symbol_id FROM instructions WHERE instructions.id = to_instruction_id))) as to_dso_name,'
-		'(SELECT dso_id FROM symbols WHERE symbols.id = '
-			'(SELECT symbol_id FROM instructions WHERE instructions.id = to_instruction_id)) AS to_dso_id'
-		' FROM dso_jumps')
 
 
 file_header = struct.pack("!11sii", "PGCOPY\n\377\r\n\0", 0, 0)
@@ -498,7 +472,6 @@ dso_file		= open_output_file("dso_table.bin")
 instr_file		= open_output_file("instr_table.bin")
 symbol_file		= open_output_file("symbol_table.bin")
 sample_file		= open_output_file("sample_table.bin")
-dso_jump_file		= open_output_file("dso_jump_table.bin")
 if perf_db_export_calls or perf_db_export_callchains:
 	call_path_file          = open_output_file("call_path_table.bin")
 if perf_db_export_calls:
@@ -506,9 +479,6 @@ if perf_db_export_calls:
 # dictionary containing instruction stats, where ip is key
 ip_dict = {}
 dso_ids = []
-pcre_dso_ids = []
-dso_jump_dict = {}
-prev_sample = {}
 
 def trace_begin():
 	print datetime.datetime.today(), "Writing to intermediate files..."
@@ -522,7 +492,6 @@ unhandled_count = 0
 def trace_end():
 	print datetime.datetime.today(), "Writing instructions summary to file..."
 	instruction_table()
-	dso_jump_table()
 
 	print datetime.datetime.today(), "Copying to database..."
 	copy_output_file(thread_file,		"threads")
@@ -531,7 +500,6 @@ def trace_end():
 	copy_output_file(symbol_file,		"symbols")
 	copy_output_file(sample_file,		"samples")
 	copy_output_file(thread_file,		"threads")
-	copy_output_file(dso_jump_file,		"dso_jumps")
 	if perf_db_export_calls or perf_db_export_callchains:
 		copy_output_file(call_path_file,        "call_paths")
 	if perf_db_export_calls:
@@ -543,7 +511,6 @@ def trace_end():
 	remove_output_file(instr_file)
 	remove_output_file(symbol_file)
 	remove_output_file(sample_file)
-	remove_output_file(dso_jump_file)
 	if perf_db_export_calls or perf_db_export_callchains:
 		remove_output_file(call_path_file)
 	if perf_db_export_calls:
@@ -555,7 +522,6 @@ def trace_end():
 	do_query(query, 'ALTER TABLE instructions    ADD PRIMARY KEY (id)')
 	do_query(query, 'ALTER TABLE symbols         ADD PRIMARY KEY (id)')
 	do_query(query, 'ALTER TABLE samples         ADD PRIMARY KEY (id)')
-	do_query(query, 'ALTER TABLE dso_jumps       ADD PRIMARY KEY (id)')
 	if perf_db_export_calls or perf_db_export_callchains:
 		do_query(query, 'ALTER TABLE call_paths      ADD PRIMARY KEY (id)')
 	if perf_db_export_calls:
@@ -569,9 +535,6 @@ def trace_end():
 	do_query(query, 'ALTER TABLE samples '
 					'ADD CONSTRAINT threadfk	FOREIGN KEY (thread_id)			REFERENCES threads		(tid),'
 					'ADD CONSTRAINT instrfk		FOREIGN KEY (instruction_id)	REFERENCES instructions	(id)')
-	do_query(query, 'ALTER TABLE dso_jumps '
-					'ADD CONSTRAINT instrjumpfromfk	FOREIGN KEY (from_instruction_id)	REFERENCES instructions	(id),'
-					'ADD CONSTRAINT instrjumptofk	FOREIGN KEY (to_instruction_id)		REFERENCES instructions	(id)')
 	if perf_db_export_calls or perf_db_export_callchains:
 		do_query(query, 'ALTER TABLE call_paths '
 					'ADD CONSTRAINT parentfk    FOREIGN KEY (parent_id)    REFERENCES call_paths (id),'
@@ -640,7 +603,6 @@ def symbol_table(symbol_id, dso_id, sym_start, sym_end, binding, symbol_name, *x
 	if perf_collapse_jit_dsos:
 		if dso_id in dso_ids:
 			if symbol_name.startswith('HHVM::pcre_jit'):
-				pcre_dso_ids.append(dso_id)
 				dso_id = dso_ids[1]
 			else:
 				dso_id = dso_ids[0]
@@ -654,7 +616,6 @@ def branch_type_table(branch_type, name, *x):
 def sample_table(sample_id, evsel_id, machine_id, tid, comm_id, dso_id, symbol_id, sym_offset, ip, time, cpu, to_dso_id, to_symbol_id, to_sym_offset, to_ip, period, weight, transaction, data_src, branch_type, in_tx, call_path_id, insn, *x):
 	instr_id = get_instruction_id(ip)
 	instr_dict_insert(instr_id, symbol_id, ip, insn, sym_offset)
-	dso_jump_dict_insert(instr_id, dso_id, time)
 	fmt = "!hiiihiqiiii"
 	value = struct.pack(fmt, 5, 4, sample_id, 2, cpu, 8, time, 4, instr_id, 4, tid)
 	sample_file.write(value)
@@ -682,16 +643,6 @@ def instruction_table():
 		value.extend(ip_dict[ip]["opcode"])
 		instr_file.write(value)
 
-def dso_jump_table():
-	for id in dso_jump_dict:
-		value = bytearray()
-		from_instr_id = dso_jump_dict[id]["from_instr_id"]
-		from_time = dso_jump_dict[id]["from_time"]
-		to_instr_id = dso_jump_dict[id]["to_instr_id"]
-		to_time = dso_jump_dict[id]["to_time"]
-		value.extend(struct.pack("!hiiiqiiiqii", 5, 4, id, 8, from_time, 4, from_instr_id, 8, to_time, 4, to_instr_id))
-		dso_jump_file.write(value)
-
 def get_instruction_id(ip):
 	if ip in ip_dict:
 		return ip_dict[ip]["id"]
@@ -711,25 +662,3 @@ def instr_dict_insert(instr_id, symbol_id, ip, opcode, sym_offset):
 		ip_dict[ip]["symbol_id"] = symbol_id
 		ip_dict[ip]["opcode"] = opcode
 		ip_dict[ip]["sym_offset"] = sym_offset
-
-def dso_jump_dict_add_entry(from_time, from_instr_id, to_time, to_instr_id):
-	id = len(dso_jump_dict) + 1
-	dso_jump_dict[id] = {}
-	dso_jump_dict[id]["from_time"] = from_time
-	dso_jump_dict[id]["from_instr_id"] = from_instr_id
-	dso_jump_dict[id]["to_time"] = to_time
-	dso_jump_dict[id]["to_instr_id"] = to_instr_id
-
-def dso_jump_dict_insert(instr_id, dso_id, time):
-	actual_dso_id = dso_id
-	if perf_collapse_jit_dsos:
-		if dso_id in pcre_dso_ids:
-			actual_dso_id = dso_ids[1]
-		elif dso_id in dso_ids:
-			actual_dso_id = dso_ids[0]
-	if len(prev_sample) > 0 and actual_dso_id != prev_sample["dso_id"]:
-		dso_jump_dict_add_entry(prev_sample["time"], prev_sample["instr_id"], time, instr_id)
-	# update prev_sample
-	prev_sample["time"] = time
-	prev_sample["instr_id"] = instr_id
-	prev_sample["dso_id"] = actual_dso_id
