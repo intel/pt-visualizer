@@ -1250,6 +1250,13 @@ def get_dsos_jumps(traceId, one, two):
         else:
             one_symbols[src_idx]["out"] += 1
             two_symbols[dest_idx]["in"] += 1
+
+    for idx in range(0, len(one_symbols)):
+        one_symbols[idx]["idx"] = idx
+
+    for idx in range(0, len(two_symbols)):
+        two_symbols[idx]["idx"] = len(one_symbols) + idx
+
     return jsonify({"symbolsLeft": one_symbols,
                     "symbolsRight": two_symbols,
                     "edges" : [{"left": k[0],

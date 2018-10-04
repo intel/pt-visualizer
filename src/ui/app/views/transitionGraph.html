@@ -6,6 +6,20 @@
         <select style="left: 10px;" ng-disabled="dsosLoading" ng-model="selectedDSORight" ng-change="onSelectDSORight(selectedDSO)" ng-options="item as item.name for item in availableDSOs track by item.id"></select>
     </div>
 </div>
+<div class="row-fluid graph-container winm dsoselector" ng-if="showLeftSort || showRightSort">
+    <div style="width:50%; height: 100%; position: relative; float: left;">
+        <div class="sortcontrol" ng-if="showLeftSort">
+            <a ng-bind-html="trustAsHtml(getOutSorting(true))" ng-click="onClickOutSorting(true)"></a>
+            <a ng-bind-html="trustAsHtml(getInSorting(true))" ng-click="onClickInSorting(true)"></a>
+        </div>
+    </div>
+    <div style="width:50%; height: 100%; position: relative; float: left;">
+        <div class="sortcontrol" ng-if="showRightSort">
+            <a style="float:right;" ng-bind-html="trustAsHtml(getOutSorting(false))" ng-click="onClickOutSorting(false)"></a>
+            <a style="float:right;" ng-bind-html="trustAsHtml(getInSorting(false))" ng-click="onClickInSorting(false)"></a>
+        </div>
+    </div>
+</div>
 <div class="row-fluid graph-container winm">
     <div class="graph" width="100%"></div>
 </div>

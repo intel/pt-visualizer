@@ -16,6 +16,12 @@
         priority: 0,
         scope: true,
         link: function TransitionGraphLink(scope, element, attrs) {
+          const sortCritOut = 0;
+          const sortCritIn = 1;
+
+          const sortDirDesc = 0;
+          const sortDirAsc = 1;
+
           var TransitionGraph = function(container) {
             this.container = container;
             this.data = null;
@@ -24,16 +30,84 @@
             this.boxSpacing = 30;
             this.maxSymbolNameLen = 48;
             this.arrowSpacing = 3;
+            this.currentSelection = -1;
 
-            this.initData = function() {
+            this.initScopeData = function() {
               var self = this;
               scope.availableDSOs = null;
+              scope.sortMode = {
+                left: {
+                  sortCriteria: sortCritOut,
+                  sortDirection: [sortDirDesc, sortDirDesc]
+                },
+                right: {
+                  sortCriteria: sortCritOut,
+                  sortDirection: [sortDirDesc, sortDirDesc]
+                }
+              };
+
+              scope.trustAsHtml = function(str) {
+                return sce.trustAsHtml(str);
+              };
+
+              var getSortingModeHtml = function(isLeft, mode) {
+                var sortMode = isLeft ? scope.sortMode.left :
+                               scope.sortMode.right;
+                var isModeOn = sortMode.sortCriteria === mode;
+                var result = ['Outbound ', 'Inbound '][mode] +
+                        ['&#x25bc;', '&#x25b2;'][sortMode.sortDirection[mode]];
+                if (isModeOn) {
+                  return '<b>' + result + '</b>';
+                }
+                return result;
+              };
+
+              this.enableSorting(false, false);
+
+              scope.getOutSorting = function(isLeft) {
+                return getSortingModeHtml(isLeft, sortCritOut);
+              };
+
+              scope.getInSorting = function(isLeft) {
+                return getSortingModeHtml(isLeft, sortCritIn);
+              };
+
+              var onClickSortingMode = function(isLeft, mode) {
+                var sortMode = isLeft ? scope.sortMode.left :
+                               scope.sortMode.right;
+                var isModeOn = sortMode.sortCriteria === mode;
+                if (isModeOn) {
+                  sortMode.sortDirection[mode] =
+                                        (sortMode.sortDirection[mode] + 1) & 1;
+                } else {
+                  sortMode.sortCriteria = mode;
+                }
+                self.onChangeSortingMode();
+              };
+
+              scope.onClickOutSorting = function(isLeft) {
+                onClickSortingMode(isLeft, sortCritOut);
+              };
+
+              scope.onClickInSorting = function(isLeft) {
+                onClickSortingMode(isLeft, sortCritIn);
+              };
+
               scope.onSelectDSOLeft = function(selection) {
                 self.onSelectDSOs(true);
               };
+
               scope.onSelectDSORight = function(selection) {
                 self.onSelectDSOs(false);
               };
+            };
+
+            this.enableSorting = function(leftEnabled, rightEnabled) {
+              _.defer(function() {
+                scope.$apply(function() {
+                  scope.showLeftSort = leftEnabled;
+                  scope.showRightSort = rightEnabled;
+                });});
             };
 
             this.getInitialData = function() {
@@ -111,7 +185,35 @@
             };
 
             this.onSelectSymbol = function(i) {
-              this.createFocusedChart(i);
+              if (this.currentSelection !== i) {
+                this.currentSelection = i;
+                this.createFocusedChart(i);
+              }
+            };
+
+            this.onDeselectSymbol = function() {
+              this.currentSelection = -1;
+              this.createInitialChart(this.data);
+            };
+
+            var elemOrder = function(a, b, isLeft) {
+              var sortMode = isLeft ? scope.sortMode.left :
+                             scope.sortMode.right;
+              var sortField = ['out', 'in'][sortMode.sortCriteria];
+              var diff = b[sortField] - a[sortField];
+              if (sortMode.sortDirection[sortMode.sortCriteria] ===
+                                                                sortDirAsc) {
+                diff *= -1;
+              }
+              return diff;
+            };
+
+            this.leftSort = function(a, b) {
+              return elemOrder(a, b, true);
+            };
+
+            this.rightSort = function(a, b) {
+              return elemOrder(a, b, false);
             };
 
             this.createFocusedChart = function(i) {
@@ -142,12 +244,10 @@
                 }
               });
 
-              var leftArray = Array.from(leftSet).sort();
-              var rightArray = Array.from(rightSet).sort();
+              var leftArray = Array.from(leftSet);
+              var rightArray = Array.from(rightSet);
               var symbolsLeft = [];
               var symbolsRight = [];
-              var mapLeft = [];
-              var mapRight = [];
               var revMapLeft = [];
               var revMapRight = [];
               leftArray.forEach(function(item, i) {
@@ -156,7 +256,6 @@
                   symbolsLeft[i].out = totalJumps[item][0];
                   symbolsLeft[i].in = totalJumps[item][1];
                 }
-                mapLeft[i] = item;
                 revMapLeft[item] = i;
               });
               rightArray.forEach(function(item, i) {
@@ -166,25 +265,21 @@
                   symbolsRight[i].out = totalJumps[item][1];
                   symbolsRight[i].in = totalJumps[item][0];
                 }
-                mapRight[i] = item;
                 revMapRight[item] = i;
               });
 
+              symbolsLeft.sort(this.leftSort);
+              symbolsRight.sort(this.rightSort);
+
               var graph = this.createSymbolsBoxes(
                             symbolsLeft, symbolsRight,
-                            function(i) {
-                              var left = i < symbolsLeft.length;
-                              if (!left) {
-                                i -= symbolsLeft.length;
-                              }
+                            function(item) {
+                              var idx = item.idx;
+                              var left = idx < self.data.symbolsLeft.length;
                               if (left === fromLeft) {
-                                self.createInitialChart(self.data);
+                                self.onDeselectSymbol();
                               } else {
-                                var index = left ? mapLeft[i] : mapRight[i];
-                                if (!left) {
-                                  index += self.data.symbolsLeft.length;
-                                }
-                                self.createFocusedChart(index);
+                                self.onSelectSymbol(idx);
                               }
                             });
 
@@ -207,6 +302,8 @@
                                        '#00cc99', '#ff0066');
                 }
               });
+              this.enableSorting(symbolsLeft.length > 1,
+                                 symbolsRight.length > 1);
             };
 
             this.createSymbolsBoxes = function(symbolsLeft, symbolsRight,
@@ -260,8 +357,8 @@
                   d3.select(this)
                   .style('fill', '#b3cccc');
                 })
-                .on('click', function(item, i) {
-                  onClick(i);
+                .on('click', function(item) {
+                  onClick(item);
                 });
 
               cells.append('title')
@@ -325,8 +422,16 @@
                 return;
               }
 
-              this.createSymbolsBoxes(data.symbolsLeft, data.symbolsRight,
-                                      function(i) { self.onSelectSymbol(i); });
+              var symbolsLeft = Array.from(this.data.symbolsLeft)
+                                     .sort(this.leftSort);
+              var symbolsRight = Array.from(this.data.symbolsRight)
+                                      .sort(this.rightSort);
+
+              this.createSymbolsBoxes(symbolsLeft, symbolsRight,
+                                      function(i) {
+                                        self.onSelectSymbol(i.idx); });
+              this.enableSorting(symbolsLeft.length > 1,
+                                 symbolsRight.length > 1);
             };
 
             this.onLoadTransitionGraph = function(data) {
@@ -379,11 +484,19 @@
               scope.selectedDSOLeft = data[0];
               scope.selectedDSORight = data[0];
             };
+
+            this.onChangeSortingMode = function() {
+              if (this.currentSelection === -1) {
+                this.createInitialChart(this.data);
+              } else {
+                this.createFocusedChart(this.currentSelection);
+              }
+            };
           };
 
           var transitionGraph = new TransitionGraph(
                                       d3.select(element[0]).select('.graph'));
-          transitionGraph.initData();
+          transitionGraph.initScopeData();
           transitionGraph.getInitialData();
         }
       };
