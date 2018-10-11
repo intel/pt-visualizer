@@ -11,4 +11,3 @@ satt/process/bin/x86/
 satt/process/bin/sat-*
 bin/env
 *.pyc
-*.png
