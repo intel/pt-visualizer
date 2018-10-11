@@ -631,10 +631,6 @@ canvas {
   font-family: sans-serif;
 }
 
-.heatmapoptions input {
-  margin: 0px 2px 0px 5px;
-}
-
 .heatmapoptions select {
   margin: 0px 2px 0px 5px;
   padding: 0px;
@@ -642,6 +638,37 @@ canvas {
   height: 16px;
   line-height: 16px;
   font-family: sans-serif;
+}
+
+.heatmapoptions input {
+  margin: 0px 2px 0px 5px;
+}
+
+.customcb {
+  visibility: hidden;
+  display: block;
+  height: 0;
+  width: 0;
+  position: absolute;
+  overflow: hidden;
+}
+
+.customcbspan {
+  height: 10px;
+  width: 10px;
+  margin: 2px 2px 0px 5px;
+  min-width: 0;
+  min-height: 0;
+  border: 3px solid black;
+  display: inline-block;
+}
+
+[type=checkbox]:checked + .customcbspan {
+  background: darkorange;
+}
+
+[type=checkbox]:disabled + .customcbspan {
+  background: darkgrey;
 }
 
 .symbolsFullInfo {
@@ -714,6 +741,16 @@ canvas {
   font-family: sans-serif;
   display: block;
   position: absolute;
+}
+
+.loadingsmall {
+  font-size: 12px;
+  font-family: monospace;
+  height: 20px;
+  display: table-cell;
+  vertical-align: middle;
+  padding-left: 5px;
+  float: left;
 }
 
 .sortcontrol a {

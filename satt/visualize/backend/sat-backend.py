@@ -984,8 +984,9 @@ def memheatmap_full(traceId, bytes_per_sample):
 
         def add_sample(self, ip, length, count):
             if ip < self.start_address or ip > self.end_address:
-                raise Exception(
-                            "Invalid IP %x for DSO: %s" % (ip, self.dso_name))
+                if DEBUG:
+                    print("Invalid sample skipped")
+                return
             start_address = ip - self.start_address_aligned
             end_address = (start_address + length) - 1
             start_sample = start_address // bytes_per_sample
@@ -1039,17 +1040,20 @@ def memheatmap_full(traceId, bytes_per_sample):
     t_sym = schema + ".symbols"
     t_dso = schema + ".dsos"
 
-    cur.execute("select ip, octet_length(opcode), exec_count, dso_name from " +
-                schema + ".instructions_view order by ip")
+    named_cur.execute("select ip, octet_length(opcode) as length, exec_count, "
+                      "dso_name from " + schema +
+                      ".instructions_view order by ip")
 
-    rows = cur.fetchall()
+    rows = named_cur.fetchall()
     rows.sort(key=itemgetter(0))
     address_ranges = {}
 
     for row in rows:
-        start_address = row[0]
-        end_address = start_address + row[1] - 1
-        current_dso = row[3]
+        start_address = row.ip
+        current_dso = row.dso_name
+        if start_address == 0:
+            continue
+        end_address = start_address + row.length - 1
         if current_dso not in address_ranges:
             address_ranges[current_dso] = \
                         MemoryRange(start_address, end_address, current_dso)
@@ -1068,7 +1072,10 @@ def memheatmap_full(traceId, bytes_per_sample):
 
     # Add samples to ranges
     for row in rows:
-        address_ranges[row[3]].add_sample(row[0], row[1], row[2])
+        if row.ip == 0:
+            continue
+        address_ranges[row.dso_name].add_sample(row.ip, row.length,
+                                                row.exec_count)
 
     # Process data (create logarithmic scale, calculate max)
     for ar in address_ranges_list:
@@ -1206,38 +1213,50 @@ def get_all_dsos(traceId):
 def get_dsos_jumps(traceId, one, two):
     cur, named_cur = begin_db_request()
     schema = "pt" + str(traceId)
-    cur.execute("select from_time, from_symbol, from_dso_name, from_dso_id,"
-                " to_time, to_symbol, to_dso_name, to_dso_id from " + schema +
-                ".dso_jumps_view where (from_dso_id = " + str(one) +
-                " and to_dso_id = " + str(two) + ") or (from_dso_id = " +
-                str(two) + " and to_dso_id = " + str(one) +
-                ") order by from_time")
+
+    named_cur.execute("select * from ("
+                "select cpf.symbol_id as from_symbol_id, "
+                "(select name from " + schema +
+                ".symbols where id = cpf.symbol_id) as from_symbol_name, "
+                "(select dso_id from " + schema +
+                ".symbols where id = cpf.symbol_id) as from_dso, "
+                "cpt.symbol_id as to_symbol_id, "
+                "(select name from " + schema +
+                ".symbols where id = cpt.symbol_id) as to_symbol_name, "
+                "(select dso_id from " + schema +
+                ".symbols where id = cpt.symbol_id) as to_dso, "
+                "flags from " + schema + ".calls cls "
+                "inner join " + schema + ".call_paths cpt on "
+                "cls.call_path_id = cpt.id " +
+                "inner join " + schema + ".call_paths cpf on "
+                "cls.parent_call_path_id = cpf.id "
+                ") as filterThis where (from_dso = " + str(one) +
+                " and to_dso = " + str(two) + ") or (from_dso = " + str(two) +
+                " and to_dso = " + str(one) + ")")
+
     one_symbols = []
     two_symbols = []
     one_dict = {}
     two_dict = {}
-    one_name = None
-    two_name = None
     result_dict = {}
     def get_idx(dct, lst, sym):
         if sym not in dct:
+            idx = len(lst)
             lst.append({ "name": sym,
                          "in": 0,
-                         "out": 0})
-            idx = len(lst) - 1
+                         "out": 0,
+                         "idx": idx})
             dct[sym] = idx
             return idx
         else:
             return dct[sym]
-    for item in cur.fetchall():
-        reverse = one == item[7]
-        if one_name is None:
-            one_name = item[2] if not reverse else item[6]
-        if two_name is None:
-            two_name = item[6] if not reverse else item[2]
-        src = item[1] if not reverse else item[5]
+    for item in named_cur.fetchall():
+        reverse = one == item.to_dso
+        src = item.from_symbol_name if not reverse else  \
+              item.to_symbol_name
         src_idx = get_idx(one_dict, one_symbols, src)
-        dest = item[5] if not reverse else item[1]
+        dest = item.to_symbol_name if not reverse else   \
+               item.from_symbol_name
         dest_idx = get_idx(two_dict, two_symbols, dest)
         if (src_idx, dest_idx) not in result_dict:
             result_dict[(src_idx, dest_idx)] = [1, 0] if not reverse else [0, 1]
@@ -1250,12 +1269,6 @@ def get_dsos_jumps(traceId, one, two):
         else:
             one_symbols[src_idx]["out"] += 1
             two_symbols[dest_idx]["in"] += 1
-
-    for idx in range(0, len(one_symbols)):
-        one_symbols[idx]["idx"] = idx
-
-    for idx in range(0, len(two_symbols)):
-        two_symbols[idx]["idx"] = len(one_symbols) + idx
 
     return jsonify({"symbolsLeft": one_symbols,
                     "symbolsRight": two_symbols,
