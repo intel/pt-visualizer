@@ -22,9 +22,9 @@
     .module('satt')
     .controller('MainCtrl', MainCtrl);
 
-  MainCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', 'menuService', '$window', 'Flash'];
+  MainCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', '$window', 'Flash'];
 
-  function MainCtrl($scope, $rootScope, $resource, $location, menuService, win, flash) {
+  function MainCtrl($scope, $rootScope, $resource, $location, win, flash) {
 
     $scope.showScreenShot = false;
 
@@ -45,38 +45,12 @@
             flash.showWarning('Trace is still processing and not ready for viewing!');
           }
           else {
-            menuService.addItem({'id': id, 'active': 0, 'name': traces[index].name, 'href': '#/trace/' + id });
             $location.path('trace/' + id);
           }
         });
         return;
       }
-      menuService.addItem({ 'id': id, 'active': 0, 'name': traces[index].name, 'href': '#/trace/' + id });
       $location.path('trace/' + id);
-    };
-
-    $scope.showinfo = function (id, event, index) {
-      $scope.selectTrace = $scope.traces[index];
-      $scope.traceInfoId = id;
-      $scope.showScreenShot = $scope.traces[index].screenshot;
-
-      var tiPromise = traceInfo.get(id);
-      tiPromise.then(function (resp) {
-        $scope.traceinfo = resp.data.infos;
-      });
-      $scope.infoVisible = true;
-      if ( win.innerHeight - event.clientY < 400) {
-        $scope.infoy = { bottom: win.innerHeight - event.clientY };
-      }
-      else {
-        $scope.infoy = { top: event.clientY };
-      }
-    };
-
-    $scope.hideinfo = function (/*id*/) {
-      $scope.infoVisible = false;
-      $scope.selectTrace = false;
-      $scope.showScreenShot = false;
     };
   }
 })();

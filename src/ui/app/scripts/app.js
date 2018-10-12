@@ -28,15 +28,9 @@ SATT.config(['$locationProvider', '$routeProvider', function ($locationProvider,
       templateUrl: 'views/main.html',
       controller: 'MainCtrl'
     })
-    .when('/trace/:traceID/:bookmarkId?', {
+    .when('/trace/:traceID', {
       templateUrl: 'views/trace.html',
-      controller: 'TraceCtrl',
-      resolve: {
-        // Before changing into trace view, fetch traceinfo from server
-        data: ['$route', 'traceInfo', function ($route, traceInfo) {
-          return traceInfo.get($route.current.params.traceID);
-        }]
-      }
+      controller: 'TraceCtrl'
     })
     .when('/admin', {
       templateUrl: 'views/admin/main.html',

@@ -14,24 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <!--<sat-graph window-manager startt="0" endt="0"></sat-graph>-->
-<div ng-style="infoy" ng-show="infoVisible" class="traceinfo">
-<div><b>Trace {{traceInfoId}}</b> - {{selectTrace.device}} - <b>Contact:</b> {{selectTrace.contact}}</div>
-<div class="span8">
-<table class="table table-striped">
-    <tbody class="table-rows">
-        <tr ng-repeat="row in traceinfo">
-            <td>{{row.key}}</td>
-            <td><div class='text-right'>{{row.value}}</div></td>
-            <td>{{row.info}}</td>
-        </tr>
-    </tbody>
-</table>
-</div>
-<div ng-if="showScreenShot" class="span4">
-    <img ng-src="/api/1/screenshot/{{traceInfoId}}/screen.png" />
-</div>
-</div>
-
 <table class="table table-hover table-striped">
     <thead>
     <tr>
@@ -47,7 +29,7 @@ limitations under the License.
     </thead>
     <tbody class="table-rows">
       <tr ng-click="click($index, row.id)" ng-repeat="row in traces">
-        <td class="no-link"><span ng-mouseleave="hideinfo()" ng-mouseover="showinfo(row.id, $event, $index)">Trace {{row.id}}</span></td>
+        <td class="no-link">Trace {{row.id}}</span></td>
         <td>{{row.name}}</td>
         <td>{{row.description}}</td>
         <td>{{row.created}}</td>

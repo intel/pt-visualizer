@@ -29,36 +29,12 @@
     .module('satt')
     .controller('TraceCtrl', TraceCtrl);
 
-  TraceCtrl.$inject = ['$scope', '$rootScope', '$resource', '$routeParams', '$route', '$location', 'traceInfo', 'bookmark'];
+  TraceCtrl.$inject = ['$scope', '$rootScope', '$resource', '$routeParams', '$route', '$location'];
 
-  function TraceCtrl($scope, $rootScope, $resource, $routeParams, $route, $location, traceInfo, bookmarkService) {
+  function TraceCtrl($scope, $rootScope, $resource, $routeParams, $route, $location) {
 
     /* Set title */
-    var tinfo = traceInfo.getData();
-    if (tinfo.trace && tinfo.trace.name) {
-      $rootScope.satTitle = 'SAT-' + tinfo.trace.name;
-    }
-
-    /**
-     * Open default view (no bookmark)
-     */
-    if ($routeParams.traceID && !$routeParams.bookmarkId) {
-      $scope.bookmarkviews = [{ type : 'graph', 'data' : {start : '0', end : '0'}}];
-    }
-
-    /**
-     * Handle Bookmark view loading!
-     */
-    $scope.$on('$routeChangeSuccess', function (/*event*/) {
-      if ($routeParams.traceID && $routeParams.bookmarkId) {
-        bookmarkService.get($routeParams.bookmarkId).success(function (resp) {
-          var bookmarks = _.sortBy(JSON.parse(resp.data), 'order');
-          $scope.bookmarkviews = bookmarks;
-        }).error(function (/*fail*/) {
-          // Bookmark was not found route back to /trace/wanted
-          $location.path( '/trace/' + $routeParams.traceID);
-        });
-      }
-    });
+    $rootScope.satTitle = 'Trace ' + $routeParams.traceID;
+    $rootScope.traceName = $rootScope.satTitle;
   }
 })();

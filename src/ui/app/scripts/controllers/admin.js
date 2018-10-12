@@ -22,9 +22,9 @@
     .module('satt')
     .controller('AdminCtrl', AdminCtrl);
 
-  AdminCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', 'menuService', 'Flash'];
+  AdminCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', 'Flash'];
 
-  function AdminCtrl($scope, $rootScope, $resource, $location, menuService, flash) {
+  function AdminCtrl($scope, $rootScope, $resource, $location, flash) {
     var blockNext = false;
     $rootScope.traceName = ' - Admin Traces';
     var Traces = $resource('/api/1/traces/');

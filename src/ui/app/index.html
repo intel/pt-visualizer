@@ -50,125 +50,46 @@ limitations under the License.
       </div>
     </div>
 
-        <div class="navbar navbar-fixed-top" ng-controller="MenuCtrl">
-          <div class="navbar-inner">
-            <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
-              <span class="icon-bar"></span>
-              <span class="icon-bar"></span>
-              <span class="icon-bar"></span>
-            </a>
-            <a class="brand" href="#">
-              <img class="logo" src="css/img/logo.png" />
-              <span class="link" ng-cloak> SATT {{ traceName }} </span>
-            </a>
-
-            <div class="nav-collapse" ng-cloak>
-              <ul class="nav" ng-repeat="item in menu">
-                  <li ng-mouseleave="hideinfo()" ng-mouseover="showinfo()" ng-class="{active: item.active}">
-                    <a href="{{item.href}}">
-                      {{ item.name }}
-                    </a>
-                  </li>
-              </ul>
-            </div><!--/.nav-collapse -->
-            <!-- Upload button -->
-            <div class="upload cloak pull-right">
-              <div flow-init
-                   ng-controller="UploadCtrl"
-                   >
-                <span ng-hide="loading" class="btn btn-info" flow-btn>Upload File</span>
-                <div ng-show="loading" class="progress progress-striped">
-                  <div class="bar" ng-style="{'width' : percent }"></div>
-                </div>
-              </div>
-            </div>
-            <!-- Bookmarks button -->
-            <div class="bookmark" ng-controller="BookmarkCtrl">
-              <button ng-disabled="data.addButtonDisabled" ng-click="addBookmark()" class="btn btn-info"><i class="icon-plus icon-white"></i></button>
-              <button ng-disabled="data.bookmarkListButtonDisabled" ng-click="showBookmarksButton()" class="btn btn-info"><i class="icon-list icon-white"></i> Bookmarks</button>
-              <!-- Bookmark modal -->
-              <div id="myModal" ng-show="data.visible" class="modal cloak" tabindex="1" ng-cloak>
-                <div class="modal-header">
-                  <button type="button" ng-click="data.visible=false" class="close" data-dismiss="modal" aria-hidden="true">×</button>
-                  <h3 id="myModalLabel">{{data.title}}</h3>
-                </div>
-                <!-- Bookmark List -->
-                <div class="modal-body" ng-show="data.bookmarkViewTypeList == 'list'">
-                  <div ng-show="data.searching"><img src="css/img/loader.gif" /></div>
-                  <ul ng-repeat="row in data.bookmarks">
-                    <li>
-                      <span><a href="#/trace/{{row.traceid}}/{{row.id}}" ng-click="openBookmark(row.id)">{{row.traceid}} : {{row.title}} - {{row.description}}</a>
-                      <a href="#" class="pull-right" ng-click="deleteBookmark(row.id)" title="Delete bookmark" eat-click><i class="icon-trash"></i> </a>
-                      <a href="#" class="pull-right" ng-click="editBookmark(row.id)" title="Edit bookmark" eat-click><i class="icon-pencil"></i></a>
-                      <span>
-                    </li>
-                  </ul>
-                </div>
-                <!-- Add Bookmark -->
-                <div class="modal-body" ng-show="data.bookmarkViewTypeList == 'new' || data.bookmarkViewTypeList == 'update'">
-                  <div ng-show="data.searching"><img src="css/img/loader.gif" /></div>
-                  <form class="form-horizontal">
-                    <div class="control-group" ng-class="">
-                      <label class="control-label" for="inputTraceId">Trace ID</label>
-                      <div class="controls">
-                        <input type="text" disabled id="inputTraceId" value="{{ bookmark.traceId }}">
-                      </div>
-                    </div>
-                    <div class="control-group" ng-class="{'error': bookmark.title.length < 5, 'success': bookmark.title.length >= 5}">
-                      <label class="control-label" for="inputTitle">Title</label>
-                      <div class="controls">
-                        <input type="text" id="inputTitle" ng-model="bookmark.title" placeholder="What this bookmark shows?">
-                      </div>
-                    </div>
-                    <div class="control-group success">
-                      <label class="control-label" for="inputDesc">Description</label>
-                      <div class="controls">
-                        <textarea rows="3" id="inputDesc" ng-model="bookmark.description" placeholder="More detailed description..."></textarea>
-                      </div>
-                    </div>
-                  </form>
-                </div>
-                <!-- Bookmark List Footer -->
-                <div class="modal-footer" >
-                  <button ng-show="data.bookmarkViewTypeList == 'list'" class="btn btn-info" ng-click="addBookmark()" ng-disabled="data.addButtonDisabled"><i class="icon-plus icon-white"></i> Add Bookmark</button>
-                  <button ng-show="data.bookmarkViewTypeList  == 'new'" ng-disabled="bookmark.title.length < 5" class="btn btn-info" ng-disabled="data.addButtonDisabled" ng-click="saveBookmark()"><i class="icon-plus icon-white"></i>Save Bookmark</button>
-                  <button ng-show="data.bookmarkViewTypeList == 'update'" ng-disabled="bookmark.title.length < 5" class="btn btn-info" ng-disabled="data.addButtonDisabled" ng-click="editBookmarkUpdate()"><i class="icon-plus icon-white"></i>Update Bookmark</button>
-                  <button class="btn" ng-click="data.visible=false">Close</button>
-                </div>
-                <!-- Bookmark List Footer END -->
-              </div>
-              <!-- Bookmark modal end -->
-            </div>
-
-            <div class="search" ng-controller="SearchCtrl" ng-cloak>
-              <form class="form-search code-search" name="function" ng-keydown="searchkey()" ng-submit="search()">
-                <div>
-                <div class="input-append">
-                  <input type="text" class="span3 search-query" ng-model="data.search">
-                  <button type="submit" ng-show="!data.searchVisible" class="btn"><i class="icon-search"></i> Search</button>
-                  <button type="submit" ng-show="data.searchVisible" class="btn"><i class="icon-search" ></i> Clear</button>
-                </div>
-              </div>
-              </form>
-              <div id="myModal" ng-show="data.visible" class="modal cloak" tabindex="1">
-                <div class="modal-header">
-                  <button type="button" ng-click="data.visible=false" class="close" data-dismiss="modal" aria-hidden="true">×</button>
-                  <h3 id="myModalLabel">Search Results for: {{data.search}}</h3>
-                </div>
-                <div class="modal-body">
-                  <div ng-show="data.searching"><img src="css/img/loader.gif" /></div>
-                  <ul ng-repeat="row in data.results">
-                    <li><a ng-class="{muted: data.searching}" href="#" ng-click="getSymbol(row.id,$index)" eat-click>{{row.symbol}} ({{row.hits}})</a><img ng-show="globalConfig.fetchingSymbol == $index" src="css/img/small-loader.gif" /></li>
-                  </ul>
-                </div>
-                <div class="modal-footer">
-                  <button class="btn" ng-click="data.visible=false">Close</button>
-                </div>
-              </div>
+    <div class="navbar navbar-fixed-top">
+      <div class="navbar-inner">
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </a>
+        <a class="brand" href="#">
+          <img class="logo" src="css/img/logo.png" />
+          <span class="link" ng-cloak> SATT <b>{{ traceName }}</b></span>
+        </a>
+        <div class="search" ng-controller="SearchCtrl" ng-cloak>
+          <form class="form-search code-search" name="function" ng-keydown="searchkey()" ng-submit="search()">
+            <div>
+            <div class="input-append">
+              <input type="text" class="span3 search-query" ng-model="data.search">
+              <button type="submit" ng-show="!data.searchVisible" class="btn"><i class="icon-search"></i> Search</button>
+              <button type="submit" ng-show="data.searchVisible" class="btn"><i class="icon-search" ></i> Clear</button>
             </div>
           </div>
-        </div> <!-- navbar end -->
-    <!-- Add your site or application content here -->
+          </form>
+          <div id="myModal" ng-show="data.visible" class="modal cloak" tabindex="1">
+            <div class="modal-header">
+              <button type="button" ng-click="data.visible=false" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+              <h3 id="myModalLabel">Search Results for: {{data.search}}</h3>
+            </div>
+            <div class="modal-body">
+              <div ng-show="data.searching"><img src="css/img/loader.gif" /></div>
+              <ul ng-repeat="row in data.results">
+                <li><a ng-class="{muted: data.searching}" href="#" ng-click="getSymbol(row.id,$index)" eat-click>{{row.symbol}} ({{row.hits}})</a><img ng-show="globalConfig.fetchingSymbol == $index" src="css/img/small-loader.gif" /></li>
+              </ul>
+            </div>
+            <div class="modal-footer">
+              <button class="btn" ng-click="data.visible=false">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div> <!-- navbar end -->
+  <!-- Add your site or application content here -->
 <div class="container-fluid app-page" ng-view></div>
 
     <script src="lib/jquery.js"></script>
