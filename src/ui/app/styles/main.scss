@@ -66,10 +66,14 @@ svg {
 .selActions span {
     color: white;
 }
+.navbar {
+  height: 30px;
+}
 
 .navbar .brand {
   float: left;
   display: block;
+  position: relative;
   // Vertically center the text given $navbarHeight
   color: $navbarBrandColor;
   text-shadow: 0 1px 0 $navbarBackgroundHighlight;
@@ -83,11 +87,11 @@ svg {
 
 .navbar .brand .link{
   float: left;
-  margin-left: 10px;
+  margin-left: 116px;
   margin-right: 20px;
   // Vertically center the text given $navbarHeight
   // padding: (($navbarHeight - $baseLineHeight) / 2) 20px (($navbarHeight - $baseLineHeight) / 2);
-  padding: 10px 0px 10px 0px;
+  padding: 11px 0px 10px 0px;
   font-size: 25px;
   font-weight: 200;
   color: #0071c5;
@@ -99,16 +103,17 @@ svg {
   }
 }
 
-.link b {
+.navbar .brand .link b {
+  margin-left: 10px;
   font-weight: inherit;
   color: #d63100;
 }
 
 .navbar .brand .logo{
-  float: left;
-  height: 30px;
-  padding-top: 5px;
-  margin-left: 5px;
+  top: 8px;
+  left: 5px;
+  position: absolute;
+  z-index: 9000;
 }
 
 .navbar .bookmark {

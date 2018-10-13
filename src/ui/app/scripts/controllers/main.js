@@ -30,6 +30,7 @@
 
     /* Set title */
     $rootScope.satTitle = 'SATT';
+    $rootScope.traceName = '';
 
     var Traces = $resource('/api/1/traces/');
 
@@ -38,10 +39,10 @@
     });
 
     $scope.click = function (index, id) {
-      if ($scope.traces[index].status != 0) {
+      if ($scope.traces[index].status !== 0) {
         traces = Traces.query(function () {
           $scope.traces = traces;
-          if ($scope.traces[index].status != 0) {
+          if ($scope.traces[index].status !== 0) {
             flash.showWarning('Trace is still processing and not ready for viewing!');
           }
           else {
@@ -51,6 +52,9 @@
         return;
       }
       $location.path('trace/' + id);
+    };
+    $rootScope.onClickLogo = function() {
+      $location.path('/');
     };
   }
 })();

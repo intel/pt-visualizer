@@ -16,21 +16,20 @@
 
 (function () {
 
-  'use strict';
+    'use strict';
 
-  angular
-    .module('satt')
-    .controller('TraceCtrl', TraceCtrl);
+    angular
+      .module('satt')
+      .controller('TransitionsCtrl', TransitionsCtrl);
 
-  TraceCtrl.$inject = ['$scope', '$rootScope', '$resource', '$routeParams', '$route', '$location'];
+    TransitionsCtrl.$inject = ['$scope', '$rootScope', '$resource',
+                               '$routeParams', '$route', '$location'];
 
-  function TraceCtrl($scope, $rootScope, $resource, $routeParams, $route, $location) {
-
-    /* Set title */
-    $rootScope.satTitle = 'Trace ' + $routeParams.traceID;
-    $rootScope.traceName = $rootScope.satTitle;
-    $rootScope.onClickLogo = function() {
-      $location.path('/');
-    };
-  }
-})();
+    function TransitionsCtrl($scope, $rootScope, $resource, $routeParams,
+                             $route, $location) {
+      $rootScope.satTitle = 'Trace ' + $routeParams.traceID;
+      $rootScope.traceName = $rootScope.satTitle;
+      $rootScope.onClickLogo = function() {
+      };
+    }
+  })();

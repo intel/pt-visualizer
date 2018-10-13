@@ -41,7 +41,8 @@ SATT.config(['$locationProvider', '$routeProvider', function ($locationProvider,
       controller: 'AdminEditCtrl'
     })
     .when('/transitiongraph/:traceID', {
-      templateUrl: 'views/transitions.html'
+      templateUrl: 'views/transitions.html',
+      controller: 'TransitionsCtrl'
     })
     .otherwise({
       redirectTo: '/'
