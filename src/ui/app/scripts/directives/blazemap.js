@@ -81,14 +81,22 @@
           return val - (val % to);
         };
 
-        var formatByteSize = function(value) {
+        var formatByteSize = function(value, precision) {
+          precision = (typeof precision !== 'undefined') ? precision : 0;
           if (value < 1024) {
             return value + 'B';
           }
           if (value < 1024 * 1024) {
-            return (value >> 10) + 'KB';
+            if (precision === 0) {
+              return (value >> 10) + 'KB';
+            }
+            return parseFloat((value / 1024.0).toFixed(precision)) + 'KB';
           }
-          return (value >> 20) + 'MB';
+          if (precision === 0) {
+            return (value >> 20) + 'MB';
+          }
+          return parseFloat((value / (1024.0 * 1024.0)).toFixed(precision)) +
+                 'MB';
         };
 
         var formatPercent = function(value, decimals) {
@@ -1224,6 +1232,11 @@
             this.transform.scale = 1.0;
           };
 
+          this.updateTitleWithSize = function() {
+              $rootScope.traceWSS = this.data !== null ?
+                                    formatByteSize(this.data.wss, 3) : null;
+          };
+
           this.onDataUpdate = function() {
             this.processData();
             this.updateRanges();
@@ -1234,6 +1247,7 @@
             this.resetTransform();
             this.minimapWindow.adjustScale();
             this.updateDrawingSurface();
+            this.updateTitleWithSize();
           };
 
           this.updateData = function(data) {

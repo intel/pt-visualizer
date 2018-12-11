@@ -59,7 +59,7 @@ limitations under the License.
         </a>
         <a class="brand" ng-click="onClickLogo()">
           <img class="logo" src="css/img/logo.png" />
-          <span class="link" ng-cloak> SATT <b ng-if="traceName">{{ traceName }}</b></span>
+          <span class="link" ng-cloak> SATT <b ng-if="traceName">{{ traceName }}</b><b ng-if="traceWSS"><b class="wss">WSSize:</b><b class="wss wsssize">{{ traceWSS }}</b></b></span>
         </a>
         <div class="search" ng-controller="SearchCtrl" ng-cloak>
           <form class="form-search code-search" name="function" ng-keydown="searchkey()" ng-submit="search()">

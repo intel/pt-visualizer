@@ -31,6 +31,7 @@
     /* Set title */
     $rootScope.satTitle = 'SATT';
     $rootScope.traceName = '';
+    $rootScope.traceWSS = null;
 
     var Traces = $resource('/api/1/traces/');
 

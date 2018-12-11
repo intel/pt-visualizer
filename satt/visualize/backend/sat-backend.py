@@ -1091,9 +1091,13 @@ def memheatmap_full(traceId, bytes_per_sample):
     for ar in address_ranges_list:
         ar.normalize_data(2047.0, global_max)
 
+    # Total WSS
+    total_wss = sum([ar.wss for ar in address_ranges_list])
+
     # Create result data
     return jsonify({
         "bytesPerSample": bytes_per_sample,
+        "wss": total_wss,
         "ranges":
             [ar.to_dict(idx) for idx, ar in enumerate(address_ranges_list)]
         })
