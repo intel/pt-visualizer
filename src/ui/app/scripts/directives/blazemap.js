@@ -6,10 +6,10 @@
     .directive('blazeMap', blazeMap);
 
   blazeMap.$inject = ['$http', '$compile', '$rootScope', '$routeParams',
-                      'blazeMapService', '$sce'];
+                      'blazeMapUtils', '$sce'];
 
   function blazeMap($http, $compile, $rootScope, $routeParams,
-                    blazeMapService, sce) {
+                    bmUtils, sce) {
     return {
       templateUrl : 'views/blazemap.html',
       restrict: 'E',
@@ -17,208 +17,6 @@
       priority: 0,
       scope: true,
       link: function BlazeLink(scope, element, attrs) {
-        var createCanvas = function(w, h) {
-          var canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          return canvas;
-        };
-
-        var checkIfCanvasIsWritable = function(canvas) {
-          var color = '#FF00FF';
-          var drawCtx = canvas.getContext('2d');
-          var targetX = canvas.width - 2;
-          var targetY = canvas.height - 2;
-          drawCtx.fillStyle = color;
-          drawCtx.fillRect(targetX, targetY, 1, 1);
-          var imgObj = drawCtx.getImageData(targetX, targetY, 1, 1);
-          return imgObj !== null &&
-                 imgObj.data.length > 2 &&
-                 imgObj.data[0] === 255 &&
-                 imgObj.data[1] === 0 &&
-                 imgObj.data[2] === 255;
-        };
-
-        var mergeObjects = function(one, two) {
-          for (var key in two) {
-            one[key] = two[key];
-          }
-        };
-
-        var parseHTMLColor = function(color) {
-          if (color.charAt(0) !== '#') {
-            throw new Error('Invalid HTML color');
-          }
-          color = color.replace('#', '0x');
-          return parseInt(color);
-        };
-
-        var intToRGB = function(colorInt) {
-          return {
-            r: ((colorInt & 0xFF0000) >> 16),
-            g: ((colorInt & 0x00FF00) >> 8),
-            b: (colorInt & 0x0000FF)
-          };
-        };
-
-        var floatsAreEqual = function(a, b) {
-          return Math.abs(a - b) < 0.0000000001;
-        };
-
-        var distanceBetweenSq = function(x1, y1, x2, y2) {
-          var xDiff = x2 - x1;
-          var yDiff = y2 - y1;
-          return (xDiff * xDiff) + (yDiff * yDiff);
-        };
-
-        var alignValueTo = function(val, to) {
-          if (val === 0) { return to; }
-          var md = val % to;
-          return md === 0 ? val : val + (to - md);
-        };
-
-        var closestAlignedValueTo = function(val, to) {
-          return val - (val % to);
-        };
-
-        var formatByteSize = function(value, precision) {
-          precision = (typeof precision !== 'undefined') ? precision : 0;
-          if (value < 1024) {
-            return value + 'B';
-          }
-          if (value < 1024 * 1024) {
-            if (precision === 0) {
-              return (value >> 10) + 'KB';
-            }
-            return parseFloat((value / 1024.0).toFixed(precision)) + 'KB';
-          }
-          if (precision === 0) {
-            return (value >> 20) + 'MB';
-          }
-          return parseFloat((value / (1024.0 * 1024.0)).toFixed(precision)) +
-                 'MB';
-        };
-
-        var formatPercent = function(value, decimals) {
-          var toAppend = '';
-          if (value > 0) {
-            toAppend = '+';
-          }
-          if (Math.abs(value) <= 2.0) {
-            return toAppend + (value * 100.0).toFixed(decimals) + '%';
-          } else {
-            return (value - 1.0).toFixed(decimals) + 'x';
-          }
-        };
-
-        var intToRGBAArray = function(colorInt, alpha) {
-          var colorObj = intToRGB(colorInt);
-          return new Uint8Array([colorObj.r, colorObj.g, colorObj.b, alpha]);
-        };
-
-        var putPixelFromRGBA = function(imageData, offset, rgba, repeat) {
-          while(repeat-- > 0) {
-            for (var channel = 0; channel < 4; ++channel) {
-              imageData[offset + channel] = rgba[channel];
-            }
-            offset += 4;
-          }
-        };
-
-        var createColorGradientSegment = function(startColor, endColor,
-                                                  gradArray, index, length) {
-          var start = intToRGB(parseHTMLColor(startColor));
-          var end = intToRGB(parseHTMLColor(endColor));
-          var delta = {
-            r: end.r - start.r,
-            g: end.g - start.g,
-            b: end.b - start.b
-          };
-          var incr = {
-            r: delta.r / (length - 1),
-            g: delta.g / (length - 1),
-            b: delta.b / (length - 1)
-          };
-          var arraySize = length << 2;
-          for (var crtByte = 0; crtByte < arraySize; ++crtByte) {
-            switch (crtByte & 3) {
-              case 0: gradArray[index] = start.r; break;
-              case 1: gradArray[index] = start.g; break;
-              case 2: gradArray[index] = start.b; break;
-              case 3:
-                      gradArray[index] = 255;
-                      start.r += incr.r;
-                      start.g += incr.g;
-                      start.b += incr.b;
-              break;
-            }
-            index += 1;
-          }
-        };
-
-        var createColorGradient = function(colorArray, gradientLength) {
-          var arraySize = gradientLength << 2;
-          var gradient = new Uint8Array(arraySize);
-          var segmentSize = gradientLength / (colorArray.length - 1);
-          var currentIndex = 0;
-          for (var seg = 0; seg < colorArray.length - 1; ++seg) {
-            if (seg === colorArray.length - 2) {
-              segmentSize = gradientLength - (currentIndex >> 2);
-            }
-            createColorGradientSegment(colorArray[seg], colorArray[seg + 1],
-                                       gradient, currentIndex, segmentSize);
-            currentIndex += (segmentSize << 2);
-          }
-          return gradient;
-        };
-
-        var padStringStart = function(str, chr, len) {
-          var remaining = len - str.length;
-          if (remaining > 0) {
-            var appendOne = '';
-            var toAppend = '';
-            if ((remaining & 1) === 1) {
-              appendOne = chr;
-              remaining -= 1;
-            }
-            if (remaining > 1) {
-              toAppend = chr;
-              while(remaining > 1) {
-                toAppend = toAppend + toAppend;
-                remaining >>= 1;
-              }
-            }
-            return appendOne + toAppend + str;
-          }
-          return str;
-        };
-
-        var addressToString = function(address, length) {
-          length = (typeof length !== 'undefined') ? length : 16;
-          return '0x' + padStringStart(address.toString(16), '0', length);
-        };
-
-        var symbolOffsetToString = function(symbol, offset) {
-          if (symbol.length > 32) {
-            symbol = symbol.substring(0, 29) + '...';
-          }
-          return symbol + '+' + addressToString(offset, 4);
-        };
-
-        var formatAddrRange = function(stringOne, stringTwo) {
-          var maxLen = Math.min(stringOne.length, stringTwo.length);
-          var idx;
-          for (idx = 0; idx < maxLen; ++idx) {
-            if(stringOne[idx] !== stringTwo[idx]) { break; }
-          }
-          return stringOne.substring(0, idx) + '[' + stringOne.substring(idx) +
-                 ':' + stringTwo.substring(idx) + ']';
-        };
-
-        var clampValue = function(value, min, max) {
-          return (value < min) ? min : (value > max) ? max : value;
-        };
-
         var Blaze = function(canvasObj) {
           this.drawingSurface = canvasObj;
           this.width = this.drawingSurface.width;
@@ -260,27 +58,27 @@
             } else {
               newScale= Math.max(this.minScale, this.scale - this.scaleInc);
             }
-            if (floatsAreEqual(newScale, this.scale)) {
+            if (bmUtils.floatsAreEqual(newScale, this.scale)) {
               return false;
             }
             var logical = this.toLogicalCoords(x, y);
             this.scale = newScale;
             this.width = target.backBuffer.width * this.scale;
             this.height = target.backBuffer.height * this.scale;
-            this.x = clampValue(x - logical[0] * this.scale -
-                                this.scale / 2,
-                                -(this.width - target.width), 0);
-            this.y = clampValue(y - logical[1] * this.scale -
-                                this.scale / 2,
-                                -(this.height - target.height), 0);
+            this.x = bmUtils.clampValue(x - logical[0] * this.scale -
+                                        this.scale / 2,
+                                        -(this.width - target.width), 0);
+            this.y = bmUtils.clampValue(y - logical[1] * this.scale -
+                                        this.scale / 2,
+                                        -(this.height - target.height), 0);
             return true;
           };
 
           this.transform.pan = function(target, deltaX, deltaY) {
-            this.x = clampValue(this.x + deltaX,
-                                -(this.width - target.width), 0);
-            this.y = clampValue(this.y + deltaY,
-                                -(this.height - target.height), 0);
+            this.x = bmUtils.clampValue(this.x + deltaX,
+                                        -(this.width - target.width), 0);
+            this.y = bmUtils.clampValue(this.y + deltaY,
+                                        -(this.height - target.height), 0);
           };
 
           this.dragInfo = {
@@ -361,9 +159,9 @@
           };
 
           this.infoWindow.getCrtSampleText = function() {
-            var startAddr = addressToString(this.data.startAddress);
-            var endAddr = addressToString(this.data.endAddress);
-            return formatAddrRange(startAddr, endAddr) + ' > ' +
+            var startAddr = bmUtils.addressToString(this.data.startAddress);
+            var endAddr = bmUtils.addressToString(this.data.endAddress);
+            return bmUtils.formatAddrRange(startAddr, endAddr) + ' > ' +
                    this.data.hitCount;
           };
 
@@ -391,9 +189,9 @@
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.font = this.cellFontSize + 'px sans-serif';
-                    ctx.fillText(formatPercent(this.data.deltaValues[crtCell]),
-                                 crtX + (cellW >> 1),
-                                 crtY + (cellH >> 1));
+                    ctx.fillText(
+                          bmUtils.formatPercent(this.data.deltaValues[crtCell]),
+                          crtX + (cellW >> 1), crtY + (cellH >> 1));
                   }
                 }
                 crtX += cellW;
@@ -527,8 +325,8 @@
               var offset = Math.floor(Math.random() * 10);
               var length = loadingCanvas.width * loadingCanvas.height - 5;
               while (offset < length) {
-                putPixelFromRGBA(imageData, offset << 2, [0, 0, 0, 255],
-                                 2 + Math.floor(Math.random() * 3));
+                bmUtils.putPixelFromRGBA(imageData, offset << 2, [0, 0, 0, 255],
+                                         2 + Math.floor(Math.random() * 3));
                 offset += 5 + Math.floor(Math.random() * 10);
               }
               ctx.putImageData(imgObj, 0, 0);
@@ -610,8 +408,10 @@
           };
 
           this.symAtAddrFullRequest.formatSummary = function(data) {
-            return '<b>' + addressToString(this.currentStartAddr) +
-                   '</b> - <b>' + addressToString(this.currentEndAddr) +
+            return '<b>' +
+                   bmUtils.addressToString(this.currentStartAddr) +
+                   '</b> - <b>' +
+                   bmUtils.addressToString(this.currentEndAddr) +
                    '</b> Total Hits: <b>' + data.totalHits + '</b>';
           };
 
@@ -621,8 +421,8 @@
               data.symbols.forEach(function(item) {
                 item.visible = false;
                 item.instructions.forEach(function(instr) {
-                  instr.offsetFormatted = symbolOffsetToString(item.symbol,
-                                                               instr.offset);
+                  instr.offsetFormatted = bmUtils.symbolOffsetToString(
+                                                    item.symbol, instr.offset);
                 });
               });
             } else {
@@ -636,7 +436,7 @@
             }
             _.defer(function() {
               scope.$apply(function() {
-                mergeObjects(scope.symbolsFullInfo, data);
+                bmUtils.mergeObjects(scope.symbolsFullInfo, data);
               });
             });
           };
@@ -755,11 +555,12 @@
           this.overlays = [this.highlightRect, this.cross, this.infoWindow,
                            this.minimapWindow];
 
-          this.backBuffer = createCanvas(this.width, this.height);
-          this.colorGradient = createColorGradient(this.config.heatmapColors,
-                                                   2048);
-          this.gridColorRGBA = intToRGBAArray(
-                                  parseHTMLColor(this.config.gridColor), 255);
+          this.backBuffer = bmUtils.createCanvas(this.width, this.height);
+          this.colorGradient = bmUtils.createColorGradient(
+                                        this.config.heatmapColors, 2048);
+          this.gridColorRGBA = bmUtils.intToRGBAArray(
+                                        bmUtils.parseHTMLColor(
+                                                  this.config.gridColor), 255);
 
           this.getRangeAtPos = function(y) {
             if (this.data === null) {
@@ -780,11 +581,14 @@
           this.selectedRange = null;
 
           this.formatRangeInfo = function(range) {
-            return '<b>' + addressToString(range.displStartAddress) +
+            return '<b>' +
+                   bmUtils.addressToString(range.displStartAddress) +
                    '</b> - <b>' +
-                   addressToString(range.displEndAddress) +
-                   '</b> Length: <b>' + formatByteSize(range.displSize) +
-                   '</b> Working size: <b>' + formatByteSize(range.wss) +
+                   bmUtils.addressToString(range.displEndAddress) +
+                   '</b> Length: <b>' +
+                   bmUtils.formatByteSize(range.displSize) +
+                   '</b> Working size: <b>'+
+                   bmUtils.formatByteSize(range.wss) +
                    '</b> DSO: <b>' + range.dsoName + '</b>';
           };
 
@@ -966,10 +770,9 @@
           this.onMouseMove = function(x, y, shiftKey) {
             if (this.mouseDownInfo.time > 0 && this.dragInfo.active === false)
             {
-              if (distanceBetweenSq(this.mouseDownInfo.x,
-                                    this.mouseDownInfo.y,
-                                    x,
-                                    y) >= 9) { // (3 pixels)
+              if (bmUtils.distanceBetweenSq(this.mouseDownInfo.x,
+                                            this.mouseDownInfo.y,
+                                            x, y) >= 9) { // (3 pixels)
                 if (this.dragEnabled()) {
                   this.enableDragMode(true, x, y);
                   this.onMouseLeave(x, y);
@@ -1086,7 +889,7 @@
               this.colorGradient[colorIndex + 3],
             ];
             for (var line = 0; line < size; ++line) {
-              putPixelFromRGBA(imageData, offset, rgba, size);
+              bmUtils.putPixelFromRGBA(imageData, offset, rgba, size);
               offset -= stride;
             }
           };
@@ -1101,9 +904,10 @@
           this.updateRangesBoundsAndCreateBBuffer = function(ranges) {
             var newHeight = this.updateRangesBounds(ranges);
             if (newHeight !== this.backBuffer.height) {
-              this.backBuffer = createCanvas(this.width, newHeight);
+              this.backBuffer = bmUtils.createCanvas(this.width,
+                                                     newHeight);
             }
-            return (checkIfCanvasIsWritable(this.backBuffer));
+            return (bmUtils.checkIfCanvasIsWritable(this.backBuffer));
           };
 
           this.updateBackbufferFromRanges = function(ranges) {
@@ -1141,8 +945,8 @@
                   scope.sampleSize, imageStride);
               }
               currentOffset -= (range.bounds.h * imageStride);
-              putPixelFromRGBA(imageData, currentOffset,
-                                    this.gridColorRGBA, this.width);
+              bmUtils.putPixelFromRGBA(imageData, currentOffset,
+                                       this.gridColorRGBA, this.width);
               currentOffset -= imageStride;
             }, this);
 
@@ -1207,9 +1011,10 @@
                                            scope.bytesPerSample);
               var endSample = Math.floor(range.endAddress /
                                          scope.bytesPerSample);
-              var alignedStartSample = closestAlignedValueTo(
+              var alignedStartSample = bmUtils.closestAlignedValueTo(
                                                   startSample, width);
-              var alignedEndSample = alignValueTo(endSample + 1, width) - 1;
+              var alignedEndSample = bmUtils.alignValueTo(endSample + 1,
+                                                          width) - 1;
               range.idxCorrection = startSample - alignedStartSample;
               range.sampleCount = alignedEndSample - alignedStartSample + 1;
               range.displStartAddress = alignedStartSample *
@@ -1234,7 +1039,8 @@
 
           this.updateTitleWithSize = function() {
               $rootScope.traceWSS = this.data !== null ?
-                                    formatByteSize(this.data.wss, 3) : null;
+                                    bmUtils.formatByteSize(this.data.wss, 3) :
+                                    null;
           };
 
           this.onDataUpdate = function() {
