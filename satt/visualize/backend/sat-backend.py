@@ -977,7 +977,8 @@ def memheatmap_full(traceId, bytes_per_sample):
                                                     bytes_per_sample)
             self.byte_size = self.end_address - self.start_address + 1
             self.byte_size_aligned = self.end_address_aligned - \
-                                     self.start_address_aligned + 1
+                                     self.start_address_aligned + \
+                                     bytes_per_sample
             self.sample_count = self.byte_size_aligned // bytes_per_sample
             self.data_raw = [0] * self.sample_count
             self.data_normalized = [0] * self.sample_count
@@ -1047,6 +1048,8 @@ def memheatmap_full(traceId, bytes_per_sample):
     rows = named_cur.fetchall()
     rows.sort(key=itemgetter(0))
     address_ranges = {}
+    range_slices = {}
+    MAX_RANGE_GAP = 128 * 1024 * 1024
 
     for row in rows:
         start_address = row.ip
@@ -1058,7 +1061,29 @@ def memheatmap_full(traceId, bytes_per_sample):
             address_ranges[current_dso] = \
                         MemoryRange(start_address, end_address, current_dso)
         else:
-            address_ranges[current_dso].end_address = end_address
+            if current_dso in range_slices:
+                found_slice = False
+                for name in range_slices[current_dso]:
+                    if start_address - \
+                       address_ranges[name].end_address <= MAX_RANGE_GAP:
+                        address_ranges[name].end_address = end_address
+                        found_slice = True
+                        break
+                if not found_slice:
+                    added_dso_name = "%s_%d" % (current_dso,
+                                                len(range_slices[current_dso]))
+                    range_slices[current_dso].append(added_dso_name)
+                    address_ranges[added_dso_name] = \
+                        MemoryRange(start_address, end_address, added_dso_name)
+            else:
+                if start_address - \
+                   address_ranges[current_dso].end_address > MAX_RANGE_GAP:
+                    added_dso_name = "%s_%d" % (current_dso, 1)
+                    range_slices[current_dso] = [current_dso, added_dso_name]
+                    address_ranges[added_dso_name] = \
+                        MemoryRange(start_address, end_address, added_dso_name)
+                else:
+                    address_ranges[current_dso].end_address = end_address
 
     ranges_count = len(address_ranges)
 
@@ -1074,8 +1099,22 @@ def memheatmap_full(traceId, bytes_per_sample):
     for row in rows:
         if row.ip == 0:
             continue
-        address_ranges[row.dso_name].add_sample(row.ip, row.length,
-                                                row.exec_count)
+        target_dso = None
+        start_address = row.ip
+        end_address = start_address + row.length - 1
+        if row.dso_name in range_slices:
+            for name in range_slices[row.dso_name]:
+                if address_ranges[name].start_address <= start_address and \
+                   address_ranges[name].end_address >= end_address:
+                    target_dso = name
+                    break
+        else:
+            target_dso = row.dso_name
+        if target_dso is None:
+            print ("Dropping from %s" % (row.dso_name))
+        else:
+            address_ranges[target_dso].add_sample(start_address, row.length,
+                                                  row.exec_count)
 
     # Process data (create logarithmic scale, calculate max)
     for ar in address_ranges_list:
