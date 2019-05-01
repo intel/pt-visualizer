@@ -1,7 +1,0 @@
-*.swp
-.sconsign.dblite
-*.o
-*.a
-src/sat-stp-dump
-ext
-test

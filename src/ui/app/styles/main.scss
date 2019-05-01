@@ -70,28 +70,14 @@ svg {
   height: 30px;
 }
 
-.navbar .brand {
+.navbar .info {
   float: left;
   display: block;
-  position: relative;
-  // Vertically center the text given $navbarHeight
-  color: $navbarBrandColor;
-  text-shadow: 0 1px 0 $navbarBackgroundHighlight;
-  &:hover,
-  &:focus {
-    text-decoration: none;
-  }
-  margin:0px;
-  padding: 0;
-}
-
-.navbar .brand .link{
-  float: left;
-  margin-left: 116px;
+  margin-left: 260px;
   margin-right: 20px;
   // Vertically center the text given $navbarHeight
   // padding: (($navbarHeight - $baseLineHeight) / 2) 20px (($navbarHeight - $baseLineHeight) / 2);
-  padding: 11px 0px 10px 0px;
+  padding: 0px;
   font-size: 25px;
   font-weight: 200;
   color: #0071c5;
@@ -103,30 +89,37 @@ svg {
   }
 }
 
-.navbar .brand .link b {
-  margin-left: 10px;
+.navbar .info b {
+  position: relative;
+  top: 16px;
   font-weight: inherit;
   color: #d63100;
 }
 
-.navbar .brand .link .wss {
-  margin-left: 35px;
-  margin-top: 7px;
+.navbar .info .wss {
   font-weight: inherit;
   font-size: 18px;
+  margin-left: 35px;
+  top: 0px;
   color: #5F99BD;
 }
 
-.navbar .brand .link .wsssize {
+.navbar .info .wsssize {
   margin-left: 2px;
   font-weight: inherit;
+  font-size: 18px;
+  top: 0px;
   color: #5F7ABD;
 }
 
-.navbar .brand .logo {
-  top: 8px;
+.navbar .logo {
+  top: -3px;
   left: 5px;
+  display: block;
   position: absolute;
+  height: 50px;
+  margin:0px;
+  padding: 0;
   z-index: 9000;
 }
 

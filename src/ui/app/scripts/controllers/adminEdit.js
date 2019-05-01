@@ -25,7 +25,7 @@
   AdminEditCtrl.$inject = ['$scope', '$rootScope', '$resource', '$location', '$routeParams', 'Flash'];
 
   function AdminEditCtrl($scope, $rootScope, $resource, $location, $routeParams, flash) {
-    $rootScope.traceName = ' - Admin Traces';
+    $rootScope.traceName = 'Traces Admin';
     var Trace = $resource('/api/1/trace/:traceId', { traceId : $routeParams.traceID });
     var trace = Trace.get(function () {
       $scope.trace = trace;
@@ -38,7 +38,7 @@
           flash.showInfo('Trace ' + $routeParams.traceID + ' info updated succesfully');
         }
         else {
-         flash.showError('Trace ' + $routeParams.traceID + ' info update failed!');
+          flash.showDanger('Trace ' + $routeParams.traceID + ' info update failed!');
         }
         $location.path('/admin/');
       });

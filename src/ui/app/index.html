@@ -22,7 +22,6 @@ limitations under the License.
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-    <title ng-bind="satTitle">SATT</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width">
     <!-- use when running in SATT server <base href="/demo/" /> -->
@@ -57,10 +56,8 @@ limitations under the License.
           <span class="icon-bar"></span>
           <span class="icon-bar"></span>
         </a>
-        <a class="brand" ng-click="onClickLogo()">
-          <img class="logo" src="css/img/logo.png" />
-          <span class="link" ng-cloak> SATT <b ng-if="traceName">{{ traceName }}</b><b ng-if="traceWSS"><b class="wss">WSSize:</b><b class="wss wsssize">{{ traceWSS }}</b></b></span>
-        </a>
+        <img class="logo" src="css/img/logo.png" ng-click="onClickLogo()"/>
+        <span class="info" ng-cloak><b ng-if="traceName">{{ traceName }}</b><b ng-if="traceWSS"><b class="wss">WSSize:</b><b class="wss wsssize">{{ traceWSS }}</b></b></span>
         <div class="search" ng-controller="SearchCtrl" ng-cloak>
           <form class="form-search code-search" name="function" ng-keydown="searchkey()" ng-submit="search()">
             <div>

@@ -39,7 +39,7 @@ var gulp = require('gulp'),
 
     debug = false,
     config = {
-      buildDir: '../../satt/visualize/webui',
+      buildDir: '../../pt-visualizer/webui',
       publicDir: 'public',
       fonts: '/fonts',
       js: '/js',

@@ -26,7 +26,7 @@
 
   function AdminCtrl($scope, $rootScope, $resource, $location, flash) {
     var blockNext = false;
-    $rootScope.traceName = ' - Admin Traces';
+    $rootScope.traceName = 'Traces Admin';
     var Traces = $resource('/api/1/traces/');
     var traces = Traces.query(function () {
       $scope.traces = traces;

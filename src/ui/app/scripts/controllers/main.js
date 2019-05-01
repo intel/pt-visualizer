@@ -29,7 +29,7 @@
     $scope.showScreenShot = false;
 
     /* Set title */
-    $rootScope.satTitle = 'SATT';
+    $rootScope.satTitle = 'PT Visualizer';
     $rootScope.traceName = '';
     $rootScope.traceWSS = null;
 
