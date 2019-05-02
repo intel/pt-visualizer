@@ -34,19 +34,15 @@ if not sys.platform.startswith('win'):
 SAT_HOME = os.environ.get('SAT_HOME')
 # Set SAT_HOME for rest of the backend
 if SAT_HOME is None:
-    satHome = os.path.realpath(
+    SAT_HOME = os.path.realpath(
         os.path.join(
             os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-    os.environ['SAT_HOME'] = satHome
+    os.environ['SAT_HOME'] = SAT_HOME
 
 import status as stat
 
-if SAT_HOME:
-    app = Flask(__name__, static_url_path='',
-                static_folder=os.path.join(SAT_HOME, 'pt-visualizer', 'webui'))
-else:
-    SAT_HOME = '.'
-    app = Flask(__name__)
+app = Flask(__name__, static_url_path='',
+            static_folder=os.path.join(SAT_HOME, 'pt-visualizer', 'webui'))
 
 status = stat.getStatus()
 
@@ -60,7 +56,8 @@ def get_db():
         g._database = psycopg2.connect(
             dbname=status.getDbConfig('dbname'),
             user=status.getDbConfig('user'),
-            password=status.getDbConfig('password'))
+            password=status.getDbConfig('password'),
+            host='localhost')
         g._database.autocommit = True
     return g._database
 

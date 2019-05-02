@@ -4,6 +4,8 @@ venvdir="$cwd/bin/venv"
 pidfile="$cwd/python.pid"
 appdir="$cwd/src/ui"
 logfile="$cwd/pt-vis.log"
+dbconfigdir="$cwd/conf"
+dbconfig="$dbconfigdir/db_config"
 backenddir="$cwd/pt-visualizer/backend"
 
 function show_help {
@@ -14,6 +16,7 @@ function show_help {
     echo " -k/--kill : Kill Flask web app"
     echo " -b/--build : Build web app"
     echo " -c/--clean : Clean web app"
+    echo " -d/--db : Setup the database"
 }
 
 function venv {
@@ -59,7 +62,7 @@ function startserv {
     echo "Server started at `date`">> "$logfile"
     echo "----------------------------------------------">> "$logfile"
     source "$venvdir/bin/activate"
-    python "$backenddir/sat-backend.py" &>> "$logfile" &
+    python "$backenddir/sat-backend.py" >> "$logfile" 2>&1 &
     echo $! > "$pidfile"
     echo "Running server"
 }
@@ -81,6 +84,40 @@ function cleanapp {
     cd "$cwd"
 }
 
+function gendbconfig {
+    if [ -z "$RANDOM" ]; then
+        echo "Fatal error: RANDOM is not available in this shell"
+        exit -1
+    fi
+    read -r dbname nothing <<< `echo $RANDOM$RANDOM$RANDOM | md5sum`
+    read -r dbuser nothing <<< `echo $RANDOM$RANDOM$RANDOM | md5sum`
+    read -r dbpassword nothing <<< `echo $RANDOM$RANDOM$RANDOM | md5sum`
+    dbname="_$dbname"
+    dbuser="_$dbuser"
+    echo "[DB]" > "$dbconfig"
+    echo "dbname: $dbname" >> "$dbconfig"
+    echo "user: $dbuser" >> "$dbconfig"
+    echo "password: $dbpassword" >> "$dbconfig"
+}
+
+function dbsetup {
+    if [ ! -d "$dbconfigdir" ]; then
+        mkdir -p "$dbconfigdir"
+    fi
+    if [ ! -f "$dbconfig" ]; then
+        gendbconfig
+        founduname=`sudo -u postgres psql -q -t --command "SELECT usename FROM pg_user WHERE usename = '$dbuser';" | xargs`
+        if [ -z $founduname ]; then
+            sudo -u postgres psql -q --command "CREATE USER $dbuser WITH PASSWORD '$dbpassword';"
+            sudo -u postgres psql -q --command "CREATE DATABASE $dbname OWNER $dbuser;"
+        else
+            echo "User $dbuser already present in the database"
+        fi
+    else
+        echo "Database was already setup!"
+    fi
+}
+
 while [[ $# > 0 ]]
 do
     key="$1"
@@ -99,6 +136,9 @@ do
     ;;
     -c|--clean)
         cleanapp
+    ;;
+    -d|--db)
+        dbsetup
     ;;
     *)
         echo "Unrecognized command: $key, ignoring..."

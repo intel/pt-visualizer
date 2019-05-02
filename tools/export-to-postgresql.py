@@ -221,8 +221,14 @@ PQputCopyData.argtypes = [ c_void_p, c_void_p, c_int ]
 PQputCopyEnd = libpq.PQputCopyEnd
 PQputCopyEnd.argtypes = [ c_void_p, c_void_p ]
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 sys.path.append(os.environ['PERF_EXEC_PATH'] + \
 	'/scripts/python/Perf-Trace-Util/lib/Perf/Trace')
+sys.path.append(os.path.realpath(os.path.join(dir_path, '..',
+				'pt-visualizer', 'backend')))
+
+import status
 
 # These perf imports are not used at present
 #from perf_trace_context import *
@@ -264,9 +270,10 @@ for i in range(4,len(sys.argv)):
 	else:
 		usage()
 
-dbname = 'sat'
-dbuser = 'sat'
-dbpass = 'uranus'
+conf = status.getStatus()
+dbname = conf.getDbConfig('dbname')
+dbuser = conf.getDbConfig('user')
+dbpass = conf.getDbConfig('password')
 dbgivenname = sys.argv[1]
 
 def do_query(q, s):
