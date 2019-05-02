@@ -57,7 +57,7 @@ limitations under the License.
           <span class="icon-bar"></span>
         </a>
         <img class="logo" src="css/img/logo.png" ng-click="onClickLogo()"/>
-        <span class="info" ng-cloak><b ng-if="traceName">{{ traceName }}</b><b ng-if="traceWSS"><b class="wss">WSSize:</b><b class="wss wsssize">{{ traceWSS }}</b></b></span>
+        <span class="info" ng-cloak><b ng-if="traceName">{{ traceName }}</b><b ng-if="traceWSS"><b class="wss">WSSize:</b><b class="wss wsssize" ng-if="traceWSS">{{ traceWSS }}</b></b></span>
         <div class="search" ng-controller="SearchCtrl" ng-cloak>
           <form class="form-search code-search" name="function" ng-keydown="searchkey()" ng-submit="search()">
             <div>
