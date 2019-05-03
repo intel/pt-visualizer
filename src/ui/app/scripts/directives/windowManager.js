@@ -22,43 +22,11 @@
     .module('satt')
     .directive('windowManager', windowManager);
 
-  windowManager.$inject = ['graphService'];
-
-  function windowManager(graphService) {
+  function windowManager() {
     return {
       restrict: 'A',
       priority: 10,
       link: function postLink(scope, element) {
-        /**
-        * Window button handling
-        */
-        scope.graphClose = function () {
-          //This will destroy scope, but also will call to scope listener with $destroy event to do cleanup
-          scope.$destroy();
-          $(element).remove();
-        };
-
-        scope.graphFixed = function () {
-          scope.fixed = true;
-          var height = graphService.addElement(scope.$id, $(element).innerHeight());
-          $(element).css('top', height);
-          $(element).addClass('graph-fixed');
-        };
-
-        scope.graphFloat = function () {
-          scope.fixed = false;
-          $(element).removeClass('graph-fixed');
-          graphService.removeElement(scope.$id);
-        };
-
-        scope.graphToggleFold = function () {
-          $(element).find('.winm').toggle();
-          if (scope.fixed)
-          {
-            //var height = graphService.changeElementHeight(scope.$id, $(element).innerHeight());
-            graphService.changeElementHeight(scope.$id, $(element).innerHeight());
-          }
-        };
       }
     };
   }

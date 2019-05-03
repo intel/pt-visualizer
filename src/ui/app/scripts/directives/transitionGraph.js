@@ -512,9 +512,6 @@
                   .style('font-size', '12px')
                   .style('fill', color)
                   .text(function(item) {
-                    if(d3.select(this.parentNode).attr('column') === 'left') {
-                      return item[elemName];
-                    }
                     return item[elemName];
                   });
                 };

@@ -14,7 +14,6 @@
 // limitations under the License.
 */
 process.env.DISABLE_NOTIFIER = true;
-'use strict';
 
 var gulp = require('gulp'),
     gulpUtil = require('gulp-util'),
