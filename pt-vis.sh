@@ -98,6 +98,7 @@ function gendbconfig {
     echo "dbname: $dbname" >> "$dbconfig"
     echo "user: $dbuser" >> "$dbconfig"
     echo "password: $dbpassword" >> "$dbconfig"
+    chmod 400 "$dbconfig"
 }
 
 function dbsetup {
