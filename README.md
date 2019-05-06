@@ -1,101 +1,87 @@
-# SATT Software Analyze Trace Tool
+# PT (Processor Trace) Visualizer
 
-Experimental Linux SW tool to trace, process and analyze full stack SW traces utilizing Intel HW tracing block Intel PT (Intel Processor Trace).
-
-![alt text](https://raw.githubusercontent.com/01org/satt/master/doc/img/sat-intro-gui.jpg)
+Experimental Linux SW tool to collect an Intel Processor Trace (PT) using Linux perf and visualize it as an instruction heat map.
 
 ## Overview
 
-SATT allows to trace Linux based OSes running in X86 which has Intel PT tracing block. Intel PT feature needs to be enabled in HW.
+The tool was tailored for collecting a PT for HHVM running the one URL of the Mediawiki workload present in [oss-performance](https://github.com/facebookarchive/oss-performance), but it can be easily be modified to work for any other Linux binary and use case. The PT Visualizer works on Linux based OSes running in X86 which has Intel PT tracing block.
 
-Currently it is possible to trace full SW stack from the Linux based system E.g. Android or Ubuntu linux.
+The PT visualizer uses a modified perf to collect the PT for one Mediawiki request, which is then inserted into a PostgreSQL database. The visualization front-end uses the trace information in the database to offer insights on the amount of code executed (working set size) and to construct an instruction access heat map for HHVM and all shared libraries used for the web request.
 
-Tracing does not need any additional HW, but Intel PT trace is collected in to RAM. In addition to HW instruction trace data, SATT collects needed info from running kernel, e.g. scheduling and memory map information needed to generate execution flow. Post-processing will generate function flow with timing and instruction count of each thread.
-
-Web based UI will allow to study execution in function level from All CPU's, Processes, Threads and modules.
+The PT Visualizer's web ui displays the PT as an instruction heat ma, a color-coded representation of the program’s memory space, where each pixel summarizes the access count for a particular memory range. Clicking a pixel will offer information on the instruction hit count per each function in that address space, as well as ASM annotations to identify hot instructions within one function.
 
 ## License
 
- * SATT kernel module under GNU General Public License version 2.
- * Rest of the SATT tool is licensed under Apache License, Version 2.0.
+ * perf patch and export_to_postgresql.py under GNU General Public License version 2.
+ * Rest of the PT Visualizer tool is licensed under Apache License, Version 2.0.
 
 ## Dependencies
 
-  Needed libraries to build and use SATT
+  Needed libraries to build and use the PT Visualizer
 
-  packages:
+  packages (Ubuntu):
 ```
-  build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev (python-virtualenv) postgresql-9.x libpq-dev
-```
-
-## Install SATT
-
-### Install needed dependencies
-Ubuntu 16.04 tracing PC example:
-```
-sudo apt install build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev python-virtualenv postgresql-9.5 libpq-dev
+  build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev python-virtualenv python-psycopg2 postgresql-9.x libpq-dev elfutils libunwind-dev libperl-dev numactl libaudit-dev libgtk2.0-dev
 ```
 
-### Clone or Download SATT tool
+## Install PT Visualizer
+
+### Clone or Download PT Visualizer tool
 ```
-git clone https://github.com/01org/satt.git
+git clone https://github.com/intel/pt-visualizer
 ```
 
-### Install
+### Download and patch Linux perf tool
 ```
-./bin/satt install --ui
+cd pt-visualizer/tools
+./perf_apply_DB_export_patch.sh
 
 ```
-Installer will ask sudo access rights when needed
- * Adds the satt command to to path
- * Adds the satt to bash completion (sudo)
- * Download and compile disassembler (Capstone)
- * Compile SATT parser
- * Install python virtual-env under <satt>/bin/env folder
- * Install needed python packaged to virtual-env
-
-When --ui flag used
- * Adds satt user for postgres db (sudo)
- * Adds satt db for postgres db (sudo)
 
 ### Build UI
 ```
-satt devel build-ui
+cd pt-visualizer
+./pt-vis.sh --build
 
 ```
 
-## Usage
+### Set up DB
+```
+./pt-vis.sh --db
+```
+sudo access required to set up the new DB user
+The command above will create random DB credentials and store them in
+`conf/db_config`, which can only be read by the current user. This will
+ensure that the current user is the only one who can access the PT data in
+the DB.
 
-Simple instructions how to use SATT
-
-### Configure
+### Set up Python virtualenv
 ```
-satt config
-```
-
-### Build SATT kernel module
-```
-satt build
-```
-
-### Tracing
-*NOTE: sudo needed in case tracing local machine*
-```
-satt trace
+./pt-vis.sh --venv
 ```
 
-### Process the traces
-*NOTE: sudo needed in case processing trace taken from local machine*
+### Start the Flask webserver
 ```
-satt process <given-trace-name>
+./pt-vis.sh
 ```
+The web UI of the PT visualizer is now accessible at localhost:5005.
 
-### Import & Launch UI
+## Collect a PT
 ```
-satt visualize <given-trace-name>
+cd tools
+./perf_collect_pt.sh -p /usr/bin/hhvm -t mediawiki -o `pwd`/results --oss ~/oss-performance --perf `which perf` --db-script ~/pt-visualizer/tools/export-to-postgresql.py --trace-name pt_vis_trace_hhvm_mediawiki
 ```
+The command line above assumes you have a functional oss-performance installation
+in `~/oss-performance` and hhvm installed on the system. If you need to collect
+a PT for a different binary and use case, please see `tools/perf_collect_pt.sh`
+and `tools/perf-utils/collect_pt.sh`.
 
-## Disclimer
+## Visualize the PT
+Use a browser to navigate to http://localhost:5005 to see a list of all your
+traces. After the previous command completes, the new trace should be present
+in the list.
+
+## Disclaimer
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
