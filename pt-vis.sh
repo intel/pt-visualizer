@@ -114,6 +114,14 @@ function dbsetup {
         else
             echo "User $dbuser already present in the database"
         fi
+        hbafile=$(sudo -u postgres psql -q -P format=unaligned --command "SHOW hba_file;" | head -n 2 | tail -n 1)
+        userperm=$(sudo grep  "$dbuser" "$hbafile")
+        # if the user is not present in the hba file, add it
+        if [ -z "$userperm" ]; then
+            sudo sed -i "s/local.*all.*postgres.*peer/local   all             postgres                                peer\\nlocal   all             $dbuser                                  md5/" "$hbafile"
+            sudo -u postgres psql -q --command "SELECT pg_reload_conf();" &> /dev/null
+        fi
+        echo "DB setup completed successfully"
     else
         echo "Database was already setup!"
     fi
@@ -148,3 +156,4 @@ do
     esac
     shift
 done
+

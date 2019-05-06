@@ -295,6 +295,7 @@ linux_distr = platform.linux_distribution()
 cpu_count = multiprocessing.cpu_count()
 device = uname[1] + "/" + " ".join(linux_distr)
 build = uname[3] + "/" + uname[0]
+conf.createTracesTable()
 do_query(query, 'INSERT INTO public.traces (name, cpu_count, device, created, build) '
 				'values (\'' + dbgivenname + '\', \'' + str(cpu_count) + '\', ' + '\'' + device + '\','
 				' now(), \'' + build + '\') RETURNING id')

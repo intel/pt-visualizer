@@ -40,6 +40,9 @@ class Status(object):
     def __init__(self):
         self.dbconfig = {}
         self._initConfig()
+        self.conn = psycopg2.connect(dbname=self.dbconfig['dbname'],
+            user=self.dbconfig['user'], password=self.dbconfig['password'])
+        self.cursor = self.conn.cursor()
 
     def getDbConfig(self, key):
         if key not in self.dbconfig:
@@ -54,3 +57,12 @@ class Status(object):
         self.dbconfig['dbname'] = self.config.get('DB', 'dbname')
         self.dbconfig['user'] = self.config.get('DB', 'user')
         self.dbconfig['password'] = self.config.get('DB', 'password')
+
+    def createTracesTable(self):
+        self.cursor.execute('CREATE TABLE IF NOT EXISTS public.traces (id serial, name varchar(256), description varchar(2048),' +
+                     'created date, device varchar(2048), cpu_count int4, length int DEFAULT 0, ' +
+                     "build varchar(2048) DEFAULT '', contact varchar(2048) DEFAULT '', " +
+                     "screenshot boolean DEFAULT 'false', " +
+                     "status smallint default 0, info varchar(2048) DEFAULT '', PRIMARY KEY(id))")
+        self.conn.commit()
+
