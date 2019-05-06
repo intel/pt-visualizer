@@ -1,12 +1,12 @@
-# PT (Processor Trace) Visualizer
+# Processor Trace Visualizer (PT Visualizer)
 
-Experimental Linux SW tool to collect an Intel Processor Trace (PT) using Linux perf and visualize it as an instruction heat map.
+Experimental Linux SW tool to collect an Intel Processor Trace using Linux perf and visualize it as an instruction heat map.
 
 ## Overview
 
-The tool was tailored for collecting a PT for HHVM running the one URL of the Mediawiki workload present in [oss-performance](https://github.com/facebookarchive/oss-performance), but it can be easily be modified to work for any other Linux binary and use case. The PT Visualizer works on Linux based OSes running in X86 which has Intel PT tracing block.
+The tool was tailored for collecting a Processor Trace (PT) for HHVM running the one URL of the Mediawiki workload present in [oss-performance](https://github.com/facebookarchive/oss-performance), but it can be easily be modified to work for any other Linux binary and use case. The PT Visualizer works on Linux based OSes running in X86 which has Intel PT tracing block.
 
-The PT visualizer uses a modified perf to collect the PT for one Mediawiki request, which is then inserted into a PostgreSQL database. The visualization front-end uses the trace information in the database to offer insights on the amount of code executed (working set size) and to construct an instruction access heat map for HHVM and all shared libraries used for the web request.
+The PT Visualizer uses a modified perf to collect the PT for one Mediawiki request, which is then inserted into a PostgreSQL database. The visualization front-end uses the trace information in the database to offer insights on the amount of code executed (working set size) and to construct an instruction access heat map for HHVM and all shared libraries used for the web request.
 
 The PT Visualizer's web ui displays the PT as an instruction heat ma, a color-coded representation of the program’s memory space, where each pixel summarizes the access count for a particular memory range. Clicking a pixel will offer information on the instruction hit count per each function in that address space, as well as ASM annotations to identify hot instructions within one function.
 
