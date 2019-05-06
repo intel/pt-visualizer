@@ -21,7 +21,7 @@ The PT Visualizer's web ui displays the PT as an instruction heat ma, a color-co
 
   packages (Ubuntu):
 ```
-  build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev python-virtualenv python-psycopg2 postgresql-9.x libpq-dev elfutils libunwind-dev libperl-dev numactl libaudit-dev libgtk2.0-dev
+  build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev python-virtualenv python-psycopg2 postgresql-9.x libpq-dev elfutils libunwind-dev libperl-dev numactl libaudit-dev libgtk2.0-dev libdw-dev
 ```
 
 ## Install PT Visualizer
@@ -69,7 +69,7 @@ The web UI of the PT visualizer is now accessible at localhost:5005.
 ## Collect a PT
 ```
 cd tools
-./perf_collect_pt.sh -p /usr/bin/hhvm -t mediawiki -o `pwd`/results --oss ~/oss-performance --perf `which perf` --db-script ~/pt-visualizer/tools/export-to-postgresql.py --trace-name pt_vis_trace_hhvm_mediawiki
+./perf_collect_pt.sh -p /usr/bin/hhvm -t mediawiki -o `pwd`/results --oss ~/oss-performance --perf ~/pt-visualizer/tools/perf_install/bin/perf --db-script ~/pt-visualizer/tools/export-to-postgresql.py --trace-name pt_vis_trace_hhvm_mediawiki
 ```
 The command line above assumes you have a functional oss-performance installation
 in `~/oss-performance` and hhvm installed on the system. If you need to collect
