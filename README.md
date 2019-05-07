@@ -17,12 +17,25 @@ The PT Visualizer's web ui displays the PT as an instruction heat ma, a color-co
 
 ## Dependencies
 
-  Needed libraries to build and use the PT Visualizer
+  Needed libraries to build and use the PT Visualizer on Ubuntu 16.04.
 
-  packages (Ubuntu):
+  Install Ubuntu packages:
 ```
-  build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev python-virtualenv python-psycopg2 postgresql-9.x libpq-dev elfutils libunwind-dev libperl-dev numactl libaudit-dev libgtk2.0-dev libdw-dev
+  sudo apt install build-essential scons libelf-dev python-pip git binutils-dev autoconf libtool libiberty-dev zlib1g-dev python-dev python-virtualenv python-psycopg2 postgresql-9.x libpq-dev elfutils libunwind-dev libperl-dev numactl libaudit-dev libgtk2.0-dev libdw-dev
 ```
+  Install Intel XED:
+```
+  cd ~/
+  git clone https://github.com/intelxed/xed.git
+  git clone https://github.com/intelxed/mbuild.git
+  cd xed
+  ./mfile.py examples
+  
+  # The resulting xed binary will be in ~/xed/obj/examples/xed
+  # Make sure this binary is in your PATH before proceeding.
+  export PATH=~/xed/obj/examples:$PATH
+```
+
 
 ## Install PT Visualizer
 
