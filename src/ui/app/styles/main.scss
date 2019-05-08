@@ -611,9 +611,9 @@ canvas {
 
 .overlay img {
   display: block;
-  position: absolute;
-  right: 0;
-  bottom: 0;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 100px;
   z-index: 1001;
 }
 
