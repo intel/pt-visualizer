@@ -70,6 +70,13 @@
         };
       },
 
+      checkNumericValue: function(value) {
+        if (!isFinite(value)) {
+          throw new Error('Arithmetic overflow');
+        }
+        return value;
+      },
+
       floatsAreEqual: function(a, b) {
         return Math.abs(a - b) < 0.0000000001;
       },
@@ -77,7 +84,7 @@
       distanceBetweenSq: function(x1, y1, x2, y2) {
         var xDiff = x2 - x1;
         var yDiff = y2 - y1;
-        return (xDiff * xDiff) + (yDiff * yDiff);
+        return this.checkNumericValue((xDiff * xDiff) + (yDiff * yDiff));
       },
 
       alignValueTo: function(val, to) {
